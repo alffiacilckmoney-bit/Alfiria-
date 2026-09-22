@@ -1010,6 +1010,12 @@ document.addEventListener("click", (e) => {
     closeResetConfirm();
   }
 });
+function handleOutsideModalClick(event, modalId) {
+  if (event.target.id === modalId) {
+    const modal = document.getElementById(modalId);
+    if (modal) modal.classList.remove("active");
+  }
+}
 
 // تشغيل اللعبة عند اكتمال تحميل الصفحة
 window.addEventListener("DOMContentLoaded", initBlossomIsland);
