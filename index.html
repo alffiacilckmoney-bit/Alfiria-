@@ -640,7 +640,6 @@
     document.addEventListener('dblclick', (e) => {
       e.preventDefault();
     }, { passive: false });
-    window.onerror = function(msg, url, line) { alert("خطأ: " + msg + " في السطر: " + line); };
       <!-- استدعاء ملفات الجافاسكريبت بالترتيب -->
   <script src="./js/audio.js?v=1"></script>
   <script src="./js/database.js?v=1"></script>
