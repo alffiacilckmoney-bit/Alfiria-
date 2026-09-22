@@ -477,7 +477,6 @@ function renderCard(animate = false, direction = "next") {
     isAnimatingCard = false;
   }
 }
-SoundManager.play('cardClick')
 function launchSpecialMechanic(cardIndex) {
   const card = sessionData?.levels?.[currentLevelKey]?.[cardIndex];
   
