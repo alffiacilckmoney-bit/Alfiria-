@@ -477,6 +477,7 @@ function renderCard(animate = false, direction = "next") {
     isAnimatingCard = false;
   }
 }
+
 function launchSpecialMechanic(cardIndex) {
   const card = sessionData?.levels?.[currentLevelKey]?.[cardIndex];
   
