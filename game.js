@@ -1,89 +1,104 @@
-// Alfiria - Smooth Audio Engine (Throttled & Soft Fade)
+// ==========================================
+// 0. MINIMAL AUDIO ENGINE (INTRO, SPECIAL, CELEBRATION ONLY)
+// ==========================================
 const SoundManager = {
   ctx: null,
   buffers: {},
-  lastPlayed: {}, // لتتبع أوقات التشغيل ومنع التكرار المزعج
+  loadingPromises: {},
+  lastPlayed: {},
+  currentSource: null,
 
-  // روابط Cloudinary الخفيفة
   files: {
     specialCard: 'https://res.cloudinary.com/qc0aowwf/video/upload/br_64k,q_auto/special-card.mp3',
-    islandClick: 'https://res.cloudinary.com/qc0aowwf/video/upload/br_64k,q_auto/v1790065748/island-click.mp3',
     intro:       'https://res.cloudinary.com/qc0aowwf/video/upload/br_64k,q_auto/v1790065749/intro.mp3',
-    celebration: 'https://res.cloudinary.com/qc0aowwf/video/upload/br_64k,q_auto/v1790065749/celebration.mp3',
-    cardClick:   'https://res.cloudinary.com/qc0aowwf/video/upload/br_64k,q_auto/v1790065750/card-click.mp3'
+    celebration: 'https://res.cloudinary.com/qc0aowwf/video/upload/br_64k,q_auto/v1790065749/celebration.mp3'
   },
 
-  // مستويات صوت هادئة جداً وناعمة
   volumes: {
-    islandClick: 0.16,  // خافت ومريح جداً
-    cardClick: 0.22,    // ناعم لتقليب الأوراق المتكرر
-    specialCard: 0.25,  // مميز وهادئ بدون حدة
-    intro: 0.50,        // مقدمة هادئة
-    celebration: 0.15   // احتفال غير مزعج
+    specialCard: 0.28,
+    intro: 0.50,
+    celebration: 0.22
   },
 
-  // الحد الأدنى بين كل تشغيل لإنهاء الإزعاج عند الضغط السريع (بالميلي ثانية)
   cooldowns: {
-    islandClick: 250,
-    cardClick: 180,
-    specialCard: 1000,
+    specialCard: 800,
     intro: 1000,
     celebration: 1000
   },
 
   init() {
     if (!this.ctx) {
-      const AudioContext = window.AudioContext || window.webkitAudioContext;
-      this.ctx = new AudioContext();
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) this.ctx = new AudioCtx();
     }
-    if (this.ctx.state === 'suspended') {
+    if (this.ctx && this.ctx.state === 'suspended') {
       this.ctx.resume();
     }
-    this.preloadAll();
+  },
+
+  stopCurrentSound() {
+    if (this.currentSource) {
+      try {
+        if (typeof this.currentSource.stop === 'function') {
+          this.currentSource.stop();
+        } else if (typeof this.currentSource.pause === 'function') {
+          this.currentSource.pause();
+          this.currentSource.currentTime = 0;
+        }
+      } catch (e) {}
+      this.currentSource = null;
+    }
   },
 
   async loadSound(key, url) {
-    try {
-      const res = await fetch(url);
-      const arrayBuffer = await res.arrayBuffer();
-      this.buffers[key] = await this.ctx.decodeAudioData(arrayBuffer);
-    } catch (err) {
-      console.warn(`[SoundManager] Preload failed for ${key}:`, err);
-    }
-  },
+    if (this.buffers[key]) return this.buffers[key];
+    if (this.loadingPromises[key]) return this.loadingPromises[key];
 
-  preloadAll() {
-    for (const [key, url] of Object.entries(this.files)) {
-      if (!this.buffers[key]) {
-        this.loadSound(key, url);
+    this.loadingPromises[key] = (async () => {
+      try {
+        const res = await fetch(url);
+        const arrayBuffer = await res.arrayBuffer();
+        if (!this.ctx) this.init();
+        const decoded = await this.ctx.decodeAudioData(arrayBuffer);
+        this.buffers[key] = decoded;
+        return decoded;
+      } catch (err) {
+        console.warn(`[SoundManager] Failed to load ${key}:`, err);
+        return null;
       }
-    }
+    })();
+
+    return this.loadingPromises[key];
   },
 
   async play(key, customVolume = null) {
-    // فحص الضغط السريع (منع تكرار الصوت إن تم النقر متتالياً بسرعة)
+    if (!this.files[key]) return;
+
     const nowMs = performance.now();
     const cooldown = this.cooldowns[key] || 200;
     if (this.lastPlayed[key] && (nowMs - this.lastPlayed[key] < cooldown)) {
-      return; // تجاهل الصوت لحماية أذن اللاعب من التداخل والإزعاج
+      return;
     }
     this.lastPlayed[key] = nowMs;
 
     if (!this.ctx) this.init();
-    if (this.ctx.state === 'suspended') {
+    if (this.ctx && this.ctx.state === 'suspended') {
       await this.ctx.resume();
     }
 
-    if (!this.buffers[key]) {
-      await this.loadSound(key, this.files[key]);
+    const volume = customVolume !== null ? customVolume : (this.volumes[key] || 0.3);
+    let buffer = this.buffers[key];
+
+    if (!buffer && this.files[key]) {
+      buffer = await this.loadSound(key, this.files[key]);
     }
 
-    const volume = customVolume !== null ? customVolume : (this.volumes[key] || 0.3);
-    const buffer = this.buffers[key];
+    this.stopCurrentSound();
 
     if (!buffer) {
       const fallback = new Audio(this.files[key]);
       fallback.volume = volume;
+      this.currentSource = fallback;
       fallback.play().catch(() => {});
       return;
     }
@@ -94,68 +109,34 @@ const SoundManager = {
 
     const now = this.ctx.currentTime;
     const duration = buffer.duration;
-
-    // مدة تلاشٍ أطول وأوضح لمنع أي قص فجائي
-    let fadeDuration = 0.25;
-    if (key === 'intro') {
-      fadeDuration = Math.min(1.8, duration * 0.5); // تلاشٍ طويل وفخم للإنترو
-    } else if (key === 'celebration' || key === 'specialCard') {
-      fadeDuration = Math.min(0.9, duration * 0.90); // تلاشٍ ناعم ممتد
-    } else {
-      fadeDuration = Math.min(0.18, duration * 0.4); // تلاشٍ ناعم للنقرات والكروت
-    }
+    let fadeDuration = (key === 'intro') ? Math.min(1.5, duration * 0.5) : 0.2;
 
     const fadeStartTime = Math.max(now, now + duration - fadeDuration);
-
-    // تطبيق تلاشي الصوت بسلاسة
     gainNode.gain.setValueAtTime(volume, now);
     gainNode.gain.setValueAtTime(volume, fadeStartTime);
     gainNode.gain.linearRampToValueAtTime(0.0001, now + duration);
 
     source.connect(gainNode);
     gainNode.connect(this.ctx.destination);
+    
+    this.currentSource = source;
+    source.onended = () => {
+      if (this.currentSource === source) {
+        this.currentSource = null;
+      }
+    };
+
     source.start(0);
   }
 };
 
-// تجهيز المحرك مسبقاً
 window.addEventListener('DOMContentLoaded', () => {
   SoundManager.init();
 });
 
-// مستمع النقر المحصور بالمواضع الثلاثة المحددة فقط
-document.addEventListener('pointerdown', (e) => {
-  const target = e.target;
-
-  // 1. ضغط دبابيس الجزر فقط
-  if (target.closest('.island-pin')) {
-    SoundManager.play('islandClick');
-    return;
-  }
-
-  // 2. زر المينيو الرئيسي فقط (دون أزرار الداخل)
-  if (target.closest('#menu-btn, .menu-trigger-btn, #island-menu-btn') && !target.closest('#island-menu-dropdown, #menu-overlay, .menu-modal, .menu-drawer, #settings-modal')) {
-    SoundManager.play('islandClick');
-    return;
-  }
-
-  // 3. زر Continue فقط في رسائل النهاية
-  const endModal = target.closest('#end-modal, #island-completion-modal, .completion-modal, #victory-modal');
-  if (endModal) {
-    const actionBtn = target.closest('button, .stone-btn, .action-btn');
-    if (actionBtn) {
-      const text = actionBtn.innerText.trim().toLowerCase();
-      if (text.includes('continue')) {
-        SoundManager.play('islandClick');
-        return;
-      }
-    }
-  }
-});
 // ==========================================
 // 1. QUESTIONS DATABASE (PURE DATA)
 // ==========================================
-
 const QUESTIONS_DATABASE = {
   firstDew: [
     { id: "d1", mechanic: "NATURAL", text: "What’s a subtle 'green flag' in someone that instantly makes you feel comfortable around them?" },
@@ -228,7 +209,7 @@ const QUESTIONS_DATABASE = {
 
   sproutingIdeas: [
     { id: "sp1", mechanic: "NATURAL", text: "If a strange library contained an infinite book with every decision you almost made and the parallel life that followed, which single crossroad would you be terrified, yet desperate to read about?" },
-    { id: "sp2",mechanic: "NATURAL" , text: "If you could give every person in the world one shared piece of understanding overnight, what would it be?" },
+    { id: "sp2", mechanic: "NATURAL", text: "If you could give every person in the world one shared piece of understanding overnight, what would it be?" },
     { id: "sp3", mechanic: "NATURAL", text: "Who is a character from a book, movie, or story whose philosophy on life you quietly admire?" },
     { id: "sp4", specialMechanic: "PREDICT", text: "If this person’s conscience could sit beside them all day, what habit do you think it would constantly nag them about?" },
     { id: "sp5", specialMechanic: "PREDICT", text: "If you had to guess what takes up the biggest percentage of this person’s thoughts each day, what would you say?" },
@@ -240,7 +221,7 @@ const QUESTIONS_DATABASE = {
     { id: "sp11", mechanic: "NATURAL", text: "What is an illusion about adulthood that you watched everyone around you fall for, which you actively chose to opt out of?" },
     { id: "sp12", mechanic: "NATURAL", text: "What is a minor technological convenience we use every single day that you secretly suspect is quietly making human beings dumber or weaker?" },
     { id: "sp13", specialMechanic: "PREDICT", text: "What’s one topic or debate where you think they’d refuse to change their mind, no matter how good the counter-argument is?" },
-    { id: "sp14",mechanic: "NATURAL" , text: "When faced with an unexpected delay or canceled plan, what is your genuine, unfiltered first reaction?" },
+    { id: "sp14", mechanic: "NATURAL", text: "When faced with an unexpected delay or canceled plan, what is your genuine, unfiltered first reaction?" },
     { id: "sp15", mechanic: "NATURAL", text: "If you could spend one day seeing the honest, unfiltered reality of any industry or job, which one would you pick?" },
     { id: "sp16", mechanic: "NATURAL", text: "What’s a conspiracy theory or urban myth that you don't actually believe, but secretly wish was true because it's fun?" },
     { id: "sp17", mechanic: "NATURAL", text: "What’s a subtle sign you pick up on that immediately tells you someone is genuinely intelligent, beyond just having high grades or knowledge?" },
@@ -273,13 +254,7 @@ const QUESTIONS_DATABASE = {
   ]
 };
 
-
-// ==========================================
-// 2. EXCLUSION TAGS (FOR DECK GENERATION)
-// ==========================================
-
 const CARD_TAGS = {
-  // First Dew
   d2: ["cringe_teenage_phase"],
   d5: ["ego_humbling_moments"],
   d6: ["simple_comforts"],
@@ -293,8 +268,6 @@ const CARD_TAGS = {
   d18: ["social_battery_drain"],
   d19: ["social_battery_drain"],
   d20: ["social_subtle_signs"],
-
-  // Sunny Paths
   s2: ["embarrassing_impression_fails", "ego_humbling_moments"],
   s4: ["cringe_teenage_phase"],
   s6: ["chaotic_social_appearance"],
@@ -305,8 +278,6 @@ const CARD_TAGS = {
   s16: ["chaotic_social_appearance"],
   s18: ["unspoken_sacrifice"],
   s20: ["unspoken_sacrifice"],
-
-  // Gentle Breeze
   g3: ["protecting_peace_boundaries"],
   g5: ["pruning_old_traits"],
   g6: ["hidden_sensitivity", "social_sensitivity", "emotional_vulnerability"],
@@ -320,8 +291,6 @@ const CARD_TAGS = {
   g17: ["impactful_words_on_character"],
   g19: ["hidden_sensitivity", "emotional_vulnerability"],
   g20: ["impactful_words_on_character", "emotional_vulnerability"],
-
-  // Sprouting Ideas
   sp2: ["cynical_modernity"],
   sp3: ["philosophical_worldviews"],
   sp4: ["predict_mind_habits"],
@@ -331,8 +300,6 @@ const CARD_TAGS = {
   sp11: ["cynical_modernity", "disillusioned_life_lessons"],
   sp13: ["debates_and_opinions"],
   sp19: ["debates_and_opinions"],
-
-  // Full Bloom
   b1: ["circle_deep_connection"],
   b3: ["circle_deep_connection"],
   b4: ["personality_label_award"],
@@ -343,10 +310,10 @@ const CARD_TAGS = {
   b16: ["childish_joy_habits"],
   b18: ["quiet_routine_reset"]
 };
+
 // ==========================================
 // 2. DETERMINISTIC ENGINE (PURE LOGIC)
 // ==========================================
-
 function getInitialGameState() {
   return {
     seenCardIds: [],
@@ -359,7 +326,6 @@ function getInitialGameState() {
 }
 
 function generateSessionCards(userGameHistory) {
-  // استنساخ نظيف لمنع التعديل على الكائن الأصلي مباشرة
   const history = userGameHistory ? JSON.parse(JSON.stringify(userGameHistory)) : getInitialGameState();
   history.currentSessionIndex = (history.currentSessionIndex || 0) + 1;
   const currentSessionIdx = history.currentSessionIndex;
@@ -370,11 +336,9 @@ function generateSessionCards(userGameHistory) {
   history.consecutiveAppeared = history.consecutiveAppeared || {};
   history.cooldownUntilSession = history.cooldownUntilSession || {};
 
-  // الاعتماد على الكروت التي شاهدها اللاعب بالفعل على الشاشة
   const seenSet = new Set(history.viewedCardIds.length > 0 ? history.viewedCardIds : history.seenCardIds);
   const sessionUsedTags = new Set();
 
-  // تنظيف الكروت التي انتهت فترة تبريدها
   for (const cardId in history.cooldownUntilSession) {
     if (currentSessionIdx >= history.cooldownUntilSession[cardId]) {
       delete history.cooldownUntilSession[cardId];
@@ -382,7 +346,6 @@ function generateSessionCards(userGameHistory) {
     }
   }
 
-  // الترتيب الصارم للتوليد
   const generationOrder = ["sunny", "gentle", "bloom", "sprouting", "dew"];
   const stageMapKeys = {
     dew: "firstDew",
@@ -392,22 +355,12 @@ function generateSessionCards(userGameHistory) {
     bloom: "fullBloom"
   };
 
-  // الحصص الافتراضية للكروت المميزة لكل مرحلة
-  const targetQuotas = {
-    sunny: 1,
-    gentle: 1,
-    bloom: 2,
-    sprouting: 2,
-    dew: 2
-  };
-
-  // أنماط الخانات المتباعدة لكل مرحلة (حظر الخانة 0 دائماً لكرت الإنترو)
+  const targetQuotas = { sunny: 1, gentle: 1, bloom: 2, sprouting: 2, dew: 2 };
   const slotPatterns = {
     1: [[1], [2], [3], [4]],
     2: [[1, 3], [1, 4], [2, 4]]
   };
 
-  // تهيئة مصفوفات الجلسة (5 خانات لكل مرحلة)
   const sessionStages = {
     dew: new Array(5).fill(null),
     sunny: new Array(5).fill(null),
@@ -417,8 +370,6 @@ function generateSessionCards(userGameHistory) {
   };
 
   const tagLookup = (typeof CARD_TAGS !== "undefined" && CARD_TAGS) ? CARD_TAGS : {};
-
-  // نسخ بنك الأسئلة لكل مرحلة لحماية المصدر الأصلي
   const stagePools = {};
   for (const stg in stageMapKeys) {
     const key = stageMapKeys[stg];
@@ -427,16 +378,8 @@ function generateSessionCards(userGameHistory) {
       : [];
   }
 
-  // عدادات ظهور الميكانيكيات في الجلسة لتحقيق التوازن
-  const mechanicCounts = {
-    "WHO SAID THAT": 0,
-    "PREDICT": 0,
-    "MOST LIKELY TO": 0
-  };
+  const mechanicCounts = { "WHO SAID THAT": 0, "PREDICT": 0, "MOST LIKELY TO": 0 };
 
-  // ----------------------------------------------------
-  // دالة الفحص والسحب بسلم طوارئ ذكي (7 مستويات أمان)
-  // ----------------------------------------------------
   function pickBestCard(stg, requiredMechanic = null, allowAnyMechanicIfNotFound = false) {
     const pool = stagePools[stg];
     if (!pool || pool.length === 0) return null;
@@ -459,39 +402,25 @@ function generateSessionCards(userGameHistory) {
       return cTags.every(tag => !sessionUsedTags.has(tag));
     };
 
-    const isInCooldown = (card) => {
-      return !!history.cooldownUntilSession[card.id];
-    };
+    const isInCooldown = (card) => !!history.cooldownUntilSession[card.id];
 
-    // 1. كرت جديد كلياً + تاغ حر + الميكانيك المطلوب (المثالي)
     let candidates = pool.filter(c => !seenSet.has(c.id) && isTagFree(c) && matchesMechanic(c, requiredMechanic));
 
-    // 2. كرت جديد كلياً + الميكانيك المطلوب (كسر شرط التاغ من أجل تقديم كرت جديد)
     if (candidates.length === 0) {
       candidates = pool.filter(c => !seenSet.has(c.id) && matchesMechanic(c, requiredMechanic));
     }
-
-    // 3. كرت جديد كلياً + أي ميكانيك مميز متاح
     if (candidates.length === 0 && allowAnyMechanicIfNotFound && requiredMechanic !== "NATURAL") {
       candidates = pool.filter(c => !seenSet.has(c.id) && getCardMechanic(c) !== "NATURAL");
     }
-
-    // 4. أي كرت جديد متبقٍ في هذه المرحلة
     if (candidates.length === 0) {
       candidates = pool.filter(c => !seenSet.has(c.id));
     }
-
-    // 5. كرت قديم خارج التبريد + تاغ حر + الميكانيك المطلوب (لـ Endless Mode)
     if (candidates.length === 0) {
       candidates = pool.filter(c => seenSet.has(c.id) && !isInCooldown(c) && isTagFree(c) && matchesMechanic(c, requiredMechanic));
     }
-
-    // 6. كرت قديم خارج التبريد + الميكانيك المطلوب
     if (candidates.length === 0) {
       candidates = pool.filter(c => seenSet.has(c.id) && !isInCooldown(c) && matchesMechanic(c, requiredMechanic));
     }
-
-    // 7. صمام الأمان لأي كرت متاح لمنع الـ null نهائياً
     if (candidates.length === 0) {
       candidates = [...pool];
     }
@@ -500,8 +429,6 @@ function generateSessionCards(userGameHistory) {
     if (!rawChosen) return null;
 
     const chosen = { ...rawChosen };
-
-    // حجز التاجات واستبعاد الكرت من الحوض لمنع تكراره بالجلسة
     const cTags = tagLookup[chosen.id] || [];
     cTags.forEach(tag => sessionUsedTags.add(tag));
     stagePools[stg] = stagePools[stg].filter(c => c.id !== rawChosen.id);
@@ -509,9 +436,6 @@ function generateSessionCards(userGameHistory) {
     return chosen;
   }
 
-  // ----------------------------------------------------
-  // مرحلة 1: توزيع الكروت المميزة
-  // ----------------------------------------------------
   generationOrder.forEach(stg => {
     let quota = targetQuotas[stg];
     let patterns = slotPatterns[quota];
@@ -541,9 +465,6 @@ function generateSessionCards(userGameHistory) {
     }
   });
 
-  // ----------------------------------------------------
-  // مرحلة 2: ملء الخانات المتبقية بالبطاقات الطبيعية (Natural)
-  // ----------------------------------------------------
   const stagesKey = ["dew", "sunny", "gentle", "sprouting", "bloom"];
   stagesKey.forEach(stg => {
     for (let slot = 0; slot < 5; slot++) {
@@ -557,9 +478,6 @@ function generateSessionCards(userGameHistory) {
     }
   });
 
-  // ----------------------------------------------------
-  // مرحلة 3: تسجيل الذاكرة والتبريد بعد اكتمال الـ 25 كرتاً (حلقة واحدة نظيفة)
-  // ----------------------------------------------------
   stagesKey.forEach(stg => {
     sessionStages[stg].forEach(card => {
       if (!card) return;
@@ -577,32 +495,24 @@ function generateSessionCards(userGameHistory) {
       }
       history.lastSeenSession[card.id] = currentSessionIdx;
 
-      // إذا ظهر مرتين متتاليتين، يدخل التبريد للجلسة بعد القادمة
       if (history.consecutiveAppeared[card.id] >= 2) {
         history.cooldownUntilSession[card.id] = currentSessionIdx + 2;
       }
     });
   });
 
-  // إرجاع النتيجة كنظام نقي (Pure Output) ليتولى GameStorage الحفظ
-  return { 
-    levels: sessionStages,
-    updatedHistory: history 
-  };
+  return { levels: sessionStages, updatedHistory: history };
 }
 
- // ==========================================
+// ==========================================
 // 3. MECHANICS PLUGIN CONTROLLER
 // ==========================================
-
 const MechanicsManager = {
   activeCard: null,
   currentStep: 0,
   revealIndex: 0,
+  _doneTimer: null,
 
-  // ------------------------------------------
-  // دوال التهيئة والمساعدة العامة
-  // ------------------------------------------
   getPlayers() {
     return (Array.isArray(window.playersList) && window.playersList.length >= 3) 
       ? window.playersList 
@@ -626,8 +536,6 @@ const MechanicsManager = {
     } else if (mech.includes("MOST LIKELY")) {
       if (!this.activeCard.mechanicState) this.resetMostLikelyDraftState();
       this.openMostLikelyToFlow();
-    } else {
-      alert(`${cardObj.activeMechanic} mechanic will be unlocked in the next update!`);
     }
   },
 
@@ -666,9 +574,7 @@ const MechanicsManager = {
     this.revealIndex = 0;
   },
 
-  // ==========================================
-  // [1] دوال وتدفق PREDICT
-  // ==========================================
+  // ---------------- PREDICT ----------------
   openPredictFlow() {
     const modal = document.getElementById("predict-modal");
     if (!modal) return;
@@ -693,7 +599,11 @@ const MechanicsManager = {
     }
     const guessers = allPlayers.filter(p => p !== state.targetPlayer);
 
-    // الخطوة 0: السؤال
+    if (this._doneTimer) {
+      clearTimeout(this._doneTimer);
+      this._doneTimer = null;
+    }
+
     if (this.currentStep === 0) {
       container.innerHTML = `
         <div class="card-header-row">
@@ -714,8 +624,6 @@ const MechanicsManager = {
         </div>
       `;
     }
-
-    // الخطوة 1: إدخال التوقعات والحقيقة
     else if (this.currentStep === 1) {
       const inputPassIndex = this.revealIndex;
       const isTargetTurn = (inputPassIndex >= guessers.length);
@@ -725,25 +633,18 @@ const MechanicsManager = {
 
       const guessPrompts = [
         `Step into ${target}’s brain for a minute 🧠`,
-        `Channel ${target} ,You’ve got this`,
-        `Think like ${target} ,Try not to embarrass yourself😌`,
+        `Channel ${target}, You’ve got this`,
+        `Think like ${target}, Try not to embarrass yourself😌`,
         `Become ${target} for a minute. Don’t disappoint us 😌`,
-        `Think like them ,Try not to embarrass yourself😌`
+        `Think like them, Try not to embarrass yourself😌`
       ];
 
       if (!Array.isArray(state.assignedPromptPlayers)) {
         const totalParty = allPlayers.length;
-        let quota = 1;
-        if (totalParty === 4 || totalParty === 5) {
-          quota = 2;
-        } else if (totalParty >= 6) {
-          quota = 3;
-        }
-
+        let quota = totalParty >= 6 ? 3 : (totalParty >= 4 ? 2 : 1);
         const shuffledGuessers = [...guessers].sort(() => Math.random() - 0.5);
         state.assignedPromptPlayers = shuffledGuessers.slice(0, quota);
         state.passPhrases = {};
-
         const shuffledPrompts = [...guessPrompts].sort(() => Math.random() - 0.5);
         state.assignedPromptPlayers.forEach((player, idx) => {
           state.passPhrases[player] = shuffledPrompts[idx % shuffledPrompts.length];
@@ -785,12 +686,8 @@ const MechanicsManager = {
         </div>
       `;
     }
-
-    // الخطوة 2: استعراض التوقعات
     else if (this.currentStep === 2) {
-      if (typeof state.revealedCount === "undefined") {
-        state.revealedCount = 0;
-      }
+      if (typeof state.revealedCount === "undefined") state.revealedCount = 0;
       const allGuessesRevealed = state.revealedCount >= guessers.length;
 
       const visibleGuessesHtml = guessers.slice(0, state.revealedCount).map(guesser => {
@@ -818,7 +715,6 @@ const MechanicsManager = {
 
         <div id="reveal-tap-area" onclick="MechanicsManager.revealNextCard(${guessers.length})" 
              style="width: 100%; max-height: 62vh; min-height: 220px; overflow-y: auto; padding: 6px 8px; display: flex; flex-direction: column; align-items: center; box-sizing: border-box; cursor: pointer;">
-          
           ${!allGuessesRevealed ? `
             <div style="font-size: 0.75rem; font-weight: 600; color: #a17887; letter-spacing: 0.5px; margin-bottom: 10px; text-transform: uppercase;">
               Tap anywhere to reveal
@@ -828,7 +724,6 @@ const MechanicsManager = {
               All predictions revealed
             </div>
           `}
-          
           <div style="width: 100%;">
             ${visibleGuessesHtml}
           </div>
@@ -843,14 +738,13 @@ const MechanicsManager = {
         </div>
       `;
     }
-
-    // الخطوة 3: صفحة الحقيقة المستقلة
+    // الخطوة 3: كشف الحقيقة مع تأخير حقيقي ومضمون لزر DONE
     else if (this.currentStep === 3) {
       const target = state.targetPlayer;
 
       const introPhrases = [
         "And now… the truth 🫢",
-        "Enough guessin , Time for the truth 😏",
+        "Enough guessing, time for the truth 😏",
         `Okay… what did ${target} actually say? 👀`,
         "The moment of truth ✨"
       ];
@@ -860,15 +754,11 @@ const MechanicsManager = {
         "Did you nail it, or completely miss the plot? 😭",
         "So… psychic, or just confidently wrong? 😌",
         `Did anyone get ${target} right, or were we all delusional? 👀`,
-        `And the verdict is in ,Did you know ${target} at all? 😏`
+        `And the verdict is in, did you know ${target} at all? 😏`
       ];
 
-      if (!state.truthIntro) {
-        state.truthIntro = introPhrases[Math.floor(Math.random() * introPhrases.length)];
-      }
-      if (!state.truthOutro) {
-        state.truthOutro = outroPhrases[Math.floor(Math.random() * outroPhrases.length)];
-      }
+      if (!state.truthIntro) state.truthIntro = introPhrases[Math.floor(Math.random() * introPhrases.length)];
+      if (!state.truthOutro) state.truthOutro = outroPhrases[Math.floor(Math.random() * outroPhrases.length)];
 
       container.innerHTML = `
         <style>
@@ -876,9 +766,10 @@ const MechanicsManager = {
             from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
           }
-          .truth-anim-1 { opacity: 0; animation: fadeInStep 0.6s ease forwards 0.8s; }
-          .truth-anim-2 { opacity: 0; animation: fadeInStep 0.6s ease forwards 2.0s; }
-          .truth-anim-3 { opacity: 0; animation: fadeInStep 0.6s ease forwards 3.4s; }
+          .truth-anim-1 { opacity: 0; animation: fadeInStep 0.5s ease forwards 0.5s; }
+          .truth-anim-2 { opacity: 0; animation: fadeInStep 0.5s ease forwards 1.4s; }
+          .truth-anim-3 { opacity: 0; animation: fadeInStep 0.5s ease forwards 2.4s; }
+          .btn-fade-in { animation: fadeInStep 0.5s ease forwards; }
         </style>
 
         <div class="card-header-row">
@@ -900,34 +791,39 @@ const MechanicsManager = {
             </p>
           </div>
 
-          <div class="truth-anim-3" style="font-size: 0.9rem; font-weight: 600; color: #6b4d57; font-style: italic; margin-top: 14px; line-height: 1.35;">
+          <div class="truth-anim-3" style="font-size: 0.9rem; font-weight: 600; color: #6b4d57; font-style: italic; margin-top: 14px; margin-bottom: 16px; line-height: 1.35; padding: 0 10px;">
             ${state.truthOutro}
           </div>
         </div>
 
-        <div class="predict-nav-row truth-anim-3" style="margin-top: 10px; width: 100%;">
-          <button class="stone-btn" style="width: 100%;" onclick="MechanicsManager.finish()">
-            DONE 
-          </button>
-        </div>
+        <!-- الحاوية تبدأ فارغة لتضمن عدم ظهور الزر مع العبارة -->
+        <div id="predict-done-btn-wrap" class="predict-nav-row" style="margin-top: auto; padding-top: 10px; width: 100%; min-height: 48px;"></div>
       `;
+
+      // مؤقت جافاسكريبت حقيقي يضمن ظهور الزر بعد أن ينتهي اللاعبون من قراءة العبارة
+      this._doneTimer = setTimeout(() => {
+        const wrap = document.getElementById("predict-done-btn-wrap");
+        if (wrap) {
+          wrap.innerHTML = `
+            <button class="stone-btn btn-fade-in" style="width: 100%;" onclick="MechanicsManager.finish()">
+              DONE
+            </button>
+          `;
+        }
+      }, 3800);
     }
   },
 
   revealNextCard(totalGuessers) {
     if (this._isRevealing) return;
     const state = this.activeCard.mechanicState;
-    if (typeof state.revealedCount === "undefined") {
-      state.revealedCount = 0;
-    }
+    if (typeof state.revealedCount === "undefined") state.revealedCount = 0;
     
     if (state.revealedCount < totalGuessers) {
       this._isRevealing = true;
       state.revealedCount++;
       this.renderCurrentPredictStep();
-      setTimeout(() => {
-        this._isRevealing = false;
-      }, 300);
+      setTimeout(() => { this._isRevealing = false; }, 300);
     }
   },
 
@@ -943,10 +839,7 @@ const MechanicsManager = {
 
     if (!val) {
       if (warnEl) warnEl.innerText = "Please write something before moving on!";
-      if (input) {
-        input.style.borderColor = "#c93b58";
-        input.focus();
-      }
+      if (input) { input.style.borderColor = "#c93b58"; input.focus(); }
       return;
     }
 
@@ -959,8 +852,7 @@ const MechanicsManager = {
       this.currentStep = 2;
       this.revealIndex = 0;
     } else {
-      const currentGuesser = guessers[this.revealIndex];
-      this.activeCard.mechanicState.guesses[currentGuesser] = val;
+      this.activeCard.mechanicState.guesses[guessers[this.revealIndex]] = val;
       this.revealIndex++;
     }
 
@@ -979,18 +871,12 @@ const MechanicsManager = {
       }
     }
 
-    if (this.revealIndex > 0) {
-      this.revealIndex--;
-    } else {
-      this.currentStep = 0;
-      this.revealIndex = 0;
-    }
+    if (this.revealIndex > 0) this.revealIndex--;
+    else { this.currentStep = 0; this.revealIndex = 0; }
     this.renderCurrentPredictStep();
   },
 
-  // ==========================================
-  // [2] دوال وتدفق WHO SAID THAT
-  // ==========================================
+  // ---------------- WHO SAID THAT ----------------
   openWhoSaidThatFlow() {
     const modal = document.getElementById("predict-modal");
     if (!modal) return;
@@ -1010,7 +896,6 @@ const MechanicsManager = {
     const state = this.activeCard.mechanicState;
     const allPlayers = this.getPlayers();
 
-    // الخطوة 0: السؤال
     if (this.currentStep === 0) {
       container.innerHTML = `
         <div class="card-header-row">
@@ -1031,8 +916,6 @@ const MechanicsManager = {
         </div>
       `;
     }
-
-    // الخطوة 1: تمرير الهاتف وإدخال الإجابات
     else if (this.currentStep === 1) {
       const currentPlayerName = allPlayers[this.revealIndex];
       const savedValue = state.answers[currentPlayerName] || "";
@@ -1047,17 +930,10 @@ const MechanicsManager = {
 
       if (!Array.isArray(state.assignedPromptPlayers)) {
         const totalParty = allPlayers.length;
-        let quota = 1;
-        if (totalParty === 4 || totalParty === 5) {
-          quota = 2;
-        } else if (totalParty >= 6) {
-          quota = 3;
-        }
-
+        let quota = totalParty >= 6 ? 3 : (totalParty >= 4 ? 2 : 1);
         const shuffledPlayers = [...allPlayers].sort(() => Math.random() - 0.5);
         state.assignedPromptPlayers = shuffledPlayers.slice(0, quota);
         state.passPhrases = {};
-
         const shuffledPrompts = [...secretPrompts].sort(() => Math.random() - 0.5);
         state.assignedPromptPlayers.forEach((player, idx) => {
           state.passPhrases[player] = shuffledPrompts[idx % shuffledPrompts.length];
@@ -1099,8 +975,6 @@ const MechanicsManager = {
         </div>
       `;
     }
-
-    // الخطوة 2: كشف الإجابات وانقلاب الكرت
     else if (this.currentStep === 2) {
       const deck = state.shuffledRevealDeck || [];
       const currentAnswerObj = deck[this.revealIndex];
@@ -1110,44 +984,11 @@ const MechanicsManager = {
 
       container.innerHTML = `
         <style>
-          .who-flip-card {
-            background-color: transparent;
-            width: 100%;
-            height: 220px;
-            perspective: 1000px;
-            margin: auto 0;
-          }
-          .who-flip-inner {
-            position: relative;
-            width: 100%;
-            height: 100%;
-            text-align: center;
-            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-            transform-style: preserve-3d;
-          }
-          .who-flip-inner.is-flipped {
-            transform: rotateY(180deg);
-          }
-          .who-flip-front, .who-flip-back {
-            position: absolute;
-            width: 100%;
-            height: 100%;
-            -webkit-backface-visibility: hidden;
-            backface-visibility: hidden;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            padding: 18px 14px;
-            border-radius: 12px;
-            box-sizing: border-box;
-            background: rgba(255, 255, 255, 0.75);
-            border: 1px solid rgba(130, 86, 102, 0.2);
-          }
-          .who-flip-back {
-            transform: rotateY(180deg);
-            background: rgba(255, 255, 255, 0.9);
-          }
+          .who-flip-card { background-color: transparent; width: 100%; height: 220px; perspective: 1000px; margin: auto 0; }
+          .who-flip-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); transform-style: preserve-3d; }
+          .who-flip-inner.is-flipped { transform: rotateY(180deg); }
+          .who-flip-front, .who-flip-back { position: absolute; width: 100%; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 14px; border-radius: 12px; box-sizing: border-box; background: rgba(255, 255, 255, 0.75); border: 1px solid rgba(130, 86, 102, 0.2); }
+          .who-flip-back { transform: rotateY(180deg); background: rgba(255, 255, 255, 0.9); }
         </style>
 
         <div class="card-header-row">
@@ -1211,22 +1052,17 @@ const MechanicsManager = {
 
     if (!val) {
       if (warnEl) warnEl.innerText = "Please write your answer !";
-      if (input) {
-        input.style.borderColor = "#c93b58";
-        input.focus();
-      }
+      if (input) { input.style.borderColor = "#c93b58"; input.focus(); }
       return;
     }
 
     const allPlayers = this.getPlayers();
-    const currentPlayerName = allPlayers[this.revealIndex];
-    this.activeCard.mechanicState.answers[currentPlayerName] = val;
+    this.activeCard.mechanicState.answers[allPlayers[this.revealIndex]] = val;
 
     if (this.revealIndex >= totalPlayers - 1) {
       if (!this.activeCard.mechanicState.selectedPlayersToReveal) {
         this.activeCard.mechanicState.selectedPlayersToReveal = this.getFairWhoSaidSelectedPlayers(allPlayers);
       }
-
       const selected = this.activeCard.mechanicState.selectedPlayersToReveal;
       
       if (!this.activeCard.mechanicState.shuffledRevealDeck) {
@@ -1248,9 +1084,7 @@ const MechanicsManager = {
 
   getFairWhoSaidSelectedPlayers(allPlayers) {
     const total = allPlayers.length;
-    let quota = 2;
-    if (total >= 5) quota = 3;
-
+    let quota = total >= 5 ? 3 : 2;
     let historyCounts = JSON.parse(localStorage.getItem("alfiria_whosaid_history") || "{}");
 
     allPlayers.forEach(p => {
@@ -1258,19 +1092,13 @@ const MechanicsManager = {
     });
 
     const sortedPlayers = [...allPlayers].sort((a, b) => {
-      const countA = historyCounts[a] || 0;
-      const countB = historyCounts[b] || 0;
-      if (countA !== countB) return countA - countB;
-      return Math.random() - 0.5;
+      const diff = (historyCounts[a] || 0) - (historyCounts[b] || 0);
+      return diff !== 0 ? diff : Math.random() - 0.5;
     });
 
     const chosen = sortedPlayers.slice(0, quota);
-
-    chosen.forEach(p => {
-      historyCounts[p] = (historyCounts[p] || 0) + 1;
-    });
+    chosen.forEach(p => { historyCounts[p] = (historyCounts[p] || 0) + 1; });
     localStorage.setItem("alfiria_whosaid_history", JSON.stringify(historyCounts));
-
     return chosen;
   },
 
@@ -1278,22 +1106,15 @@ const MechanicsManager = {
     const input = document.getElementById("whosaid-live-input");
     if (input && input.value.trim()) {
       const allPlayers = this.getPlayers();
-      const currentPlayerName = allPlayers[this.revealIndex];
-      this.activeCard.mechanicState.answers[currentPlayerName] = input.value.trim();
+      this.activeCard.mechanicState.answers[allPlayers[this.revealIndex]] = input.value.trim();
     }
 
-    if (this.revealIndex > 0) {
-      this.revealIndex--;
-    } else {
-      this.currentStep = 0;
-      this.revealIndex = 0;
-    }
+    if (this.revealIndex > 0) this.revealIndex--;
+    else { this.currentStep = 0; this.revealIndex = 0; }
     this.renderCurrentWhoSaidStep();
   },
 
-  // ==========================================
-  // [3] دوال وتدفق MOST LIKELY TO
-  // ==========================================
+  // ---------------- MOST LIKELY TO ----------------
   openMostLikelyToFlow() {
     const modal = document.getElementById("predict-modal");
     if (!modal) return;
@@ -1313,9 +1134,11 @@ const MechanicsManager = {
     const state = this.activeCard.mechanicState;
     const allPlayers = this.getPlayers();
 
-    // ------------------------------------------
-    // [3.0] الخطوة 0: شاشة السؤال
-    // ------------------------------------------
+    if (this._doneTimer) {
+      clearTimeout(this._doneTimer);
+      this._doneTimer = null;
+    }
+
     if (this.currentStep === 0) {
       container.innerHTML = `
         <div class="card-header-row">
@@ -1336,17 +1159,12 @@ const MechanicsManager = {
         </div>
       `;
     }
-
-    // ------------------------------------------
-    // [3.1] الخطوة 1: تمرير الهاتف والتصويت السري
-    // ------------------------------------------
     else if (this.currentStep === 1) {
       const voterName = allPlayers[this.revealIndex];
       const eligibleNominees = allPlayers.filter(p => p !== voterName);
       const currentVote = state.votes[voterName] || "";
       const totalNominees = eligibleNominees.length;
 
-      // بنك العبارات الساخرة
       const sassyPhrases = [
         "We won’t tell them you picked them… for now 😏",
         "Choose with your chest, don't be shy 💅",
@@ -1357,17 +1175,12 @@ const MechanicsManager = {
         "Look down and vote, don't let your eyes snitch 🤐"
       ];
 
-      // توزيع الحصص العادلة وتثبيتها بالجلسة
       if (!Array.isArray(state.assignedPromptPlayers)) {
         const totalParty = allPlayers.length;
-        let quota = 1;
-        if (totalParty === 4 || totalParty === 5) quota = 2;
-        else if (totalParty >= 6) quota = 3;
-
+        let quota = totalParty >= 6 ? 3 : (totalParty >= 4 ? 2 : 1);
         const shuffledPlayers = [...allPlayers].sort(() => Math.random() - 0.5);
         state.assignedPromptPlayers = shuffledPlayers.slice(0, quota);
         state.passPhrases = {};
-
         const shuffledPrompts = [...sassyPhrases].sort(() => Math.random() - 0.5);
         state.assignedPromptPlayers.forEach((player, idx) => {
           state.passPhrases[player] = shuffledPrompts[idx % shuffledPrompts.length];
@@ -1379,7 +1192,6 @@ const MechanicsManager = {
         bottomPrompt = state.passPhrases[voterName] || "";
       }
 
-      // شبكة أزرار المرشحين
       const nomineeButtonsHtml = eligibleNominees.map((name, index) => {
         const isSelected = (currentVote === name);
         const isOddLast = (totalNominees % 2 !== 0 && index === totalNominees - 1);
@@ -1390,22 +1202,12 @@ const MechanicsManager = {
             class="nominee-btn ${isSelected ? 'selected' : ''}" 
             onclick="MechanicsManager.selectMostLikelyVote('${name.replace(/'/g, "\\'")}')"
             style="
-              width: 100%;
-              padding: 9px 8px;
-              border-radius: 10px;
-              font-size: 0.88rem;
-              font-weight: 700;
-              font-family: inherit;
-              cursor: pointer;
-              transition: all 0.2s ease;
-              box-sizing: border-box;
+              width: 100%; padding: 9px 8px; border-radius: 10px; font-size: 0.88rem; font-weight: 700; font-family: inherit; cursor: pointer; transition: all 0.2s ease; box-sizing: border-box;
               background: ${isSelected ? '#e28599' : 'rgba(252, 246, 238, 0.85)'};
               color: ${isSelected ? '#ffffff' : '#422933'};
               border: ${isSelected ? 'none' : '1px solid rgba(180, 140, 150, 0.35)'};
               box-shadow: ${isSelected ? '0 3px 10px rgba(226, 133, 153, 0.45)' : 'none'};
-              white-space: nowrap;
-              overflow: hidden;
-              text-overflow: ellipsis;
+              white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
               ${isOddLast ? 'grid-column: 1 / -1; justify-self: center; width: 60%;' : ''}
             ">
             ${name}
@@ -1428,16 +1230,7 @@ const MechanicsManager = {
             Vote for who fits this best
           </div>
           
-          <div id="mostlikely-options" style="
-            width: 100%; 
-            max-height: 40vh; 
-            overflow-y: auto; 
-            box-sizing: border-box; 
-            padding: 2px 4px;
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 8px;
-          ">
+          <div id="mostlikely-options" style="width: 100%; max-height: 40vh; overflow-y: auto; box-sizing: border-box; padding: 2px 4px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px;">
             ${nomineeButtonsHtml}
           </div>
 
@@ -1454,12 +1247,8 @@ const MechanicsManager = {
         </div>
       `;
     }
-
-    // ------------------------------------------
-    // [3.2] الخطوة 2: كشف النتيجة بتسلسل زمني تشويقي
-    // ------------------------------------------
+    // الخطوة 2: النتيجة مع تأخير حقيقي ومضمون لزر DONE
     else if (this.currentStep === 2) {
-      // 1. حساب الأصوات
       const voteCounts = {};
       Object.values(state.votes || {}).forEach(candidate => {
         if (candidate) voteCounts[candidate] = (voteCounts[candidate] || 0) + 1;
@@ -1473,7 +1262,6 @@ const MechanicsManager = {
       const winners = Object.keys(voteCounts).filter(name => voteCounts[name] === maxVotes);
       const isTie = winners.length > 1;
 
-      // 2. قواميس العبارات
       const introPhrases = [
         "And the verdict is in… 🥁",
         "The moment of truth ✨",
@@ -1486,7 +1274,7 @@ const MechanicsManager = {
         "The group has spoken… don’t take it personally 😌",
         "Well, that wasn't even close 👀",
         "Wear the title with pride, you earned it 💅",
-        "Nobody is surprised, let’s be hones😄",
+        "Nobody is surprised, let’s be honest 😄",
         "The votes are in, and your reputation precedes you ☺️"
       ];
 
@@ -1498,19 +1286,13 @@ const MechanicsManager = {
         "Guilty in equal measure, don't look at each other 💅"
       ];
 
-      if (!state.verdictIntro) {
-        state.verdictIntro = introPhrases[Math.floor(Math.random() * introPhrases.length)];
-      }
+      if (!state.verdictIntro) state.verdictIntro = introPhrases[Math.floor(Math.random() * introPhrases.length)];
       if (!state.verdictOutro) {
         const list = isTie ? tieOutroPhrases : soloOutroPhrases;
         state.verdictOutro = list[Math.floor(Math.random() * list.length)];
       }
 
-            const winnersDisplayHtml = isTie
-        ? winners.join(", ")
-        : (winners[0] || "No votes recorded");
-
-
+      const winnersDisplayHtml = isTie ? winners.join(", ") : (winners[0] || "No votes recorded");
       const voteLabel = maxVotes === 1 ? "1 vote" : `${maxVotes} votes`;
       const badgeText = isTie ? `${voteLabel} each` : voteLabel;
 
@@ -1520,9 +1302,10 @@ const MechanicsManager = {
             from { opacity: 0; transform: translateY(8px); }
             to { opacity: 1; transform: translateY(0); }
           }
-          .verdict-anim-1 { opacity: 0; animation: fadeInStep 0.6s ease forwards 0.8s; }
-          .verdict-anim-2 { opacity: 0; animation: fadeInStep 0.6s ease forwards 2.0s; }
-          .verdict-anim-3 { opacity: 0; animation: fadeInStep 0.6s ease forwards 3.4s; }
+          .verdict-anim-1 { opacity: 0; animation: fadeInStep 0.5s ease forwards 0.5s; }
+          .verdict-anim-2 { opacity: 0; animation: fadeInStep 0.5s ease forwards 1.4s; }
+          .verdict-anim-3 { opacity: 0; animation: fadeInStep 0.5s ease forwards 2.4s; }
+          .btn-fade-in { animation: fadeInStep 0.5s ease forwards; }
         </style>
 
         <div class="card-header-row">
@@ -1534,79 +1317,57 @@ const MechanicsManager = {
         </div>
 
         <div style="margin: auto 0; width: 100%; display: flex; flex-direction: column; align-items: center; text-align: center;">
-          
-          <!-- 1. العبارة التمهيدية -->
           <div class="verdict-anim-1" style="font-size: 0.95rem; font-weight: 700; color: #825666; margin-bottom: 14px;">
             ${state.verdictIntro}
           </div>
 
-          <!-- 2. كشف الفائز والأصوات -->
-          <div class="verdict-anim-2 prediction-bubble-light" style="
-            width: 100%; 
-            padding: 18px 14px; 
-            background: rgba(252, 246, 238, 0.92); 
-            border: 1px solid rgba(226, 133, 153, 0.4); 
-            border-radius: 14px; 
-            box-sizing: border-box; 
-            box-shadow: 0 4px 16px rgba(226, 133, 153, 0.2);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-          ">
+          <div class="verdict-anim-2 prediction-bubble-light" style="width: 100%; padding: 18px 14px; background: rgba(252, 246, 238, 0.92); border: 1px solid rgba(226, 133, 153, 0.4); border-radius: 14px; box-sizing: border-box; box-shadow: 0 4px 16px rgba(226, 133, 153, 0.2); display: flex; flex-direction: column; align-items: center;">
             <div style="font-size: 0.72rem; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; color: #825666; margin-bottom: 8px;">
               ${isTie ? "TIED FOR THE LEAD" : "MOST VOTED"}
             </div>
-
             <div style="font-size: 1.55rem; font-weight: 800; font-family: 'Playfair Display', serif; color: #422933; margin-bottom: 10px; line-height: 1.25; word-break: break-word;">
               ${winnersDisplayHtml}
             </div>
-
-            <div style="
-              display: inline-block;
-              font-size: 0.78rem;
-              font-weight: 700;
-              color: #ffffff;
-              background: #e28599;
-              padding: 4px 14px;
-              border-radius: 20px;
-              letter-spacing: 0.5px;
-            ">
+            <div style="display: inline-block; font-size: 0.78rem; font-weight: 700; color: #ffffff; background: #e28599; padding: 4px 14px; border-radius: 20px; letter-spacing: 0.5px;">
               ${badgeText}
             </div>
           </div>
 
-          <!-- 3. العبارة الختامية الساخرة -->
           <div class="verdict-anim-3" style="font-size: 0.88rem; font-weight: 600; color: #6b4d57; font-style: italic; margin-top: 16px; line-height: 1.4; padding: 0 8px;">
             ${state.verdictOutro}
           </div>
         </div>
 
-        <div class="predict-nav-row verdict-anim-3" style="margin-top: 16px; width: 100%;">
-          <button class="stone-btn" style="width: 100%;" onclick="MechanicsManager.finish()">
-            DONE
-          </button>
-        </div>
+        <!-- الحاوية تبدأ فارغة لتضمن عدم ظهور الزر مع العبارة -->
+        <div id="verdict-done-btn-wrap" class="predict-nav-row" style="margin-top: auto; padding-top: 10px; width: 100%; min-height: 48px;"></div>
       `;
+
+      // مؤقت جافاسكريبت حقيقي يضمن ظهور الزر بعد قراءة العبارة الساخرة
+      this._doneTimer = setTimeout(() => {
+        const wrap = document.getElementById("verdict-done-btn-wrap");
+        if (wrap) {
+          wrap.innerHTML = `
+            <button class="stone-btn btn-fade-in" style="width: 100%;" onclick="MechanicsManager.finish()">
+              DONE
+            </button>
+          `;
+        }
+      }, 3800);
     }
   },
 
   selectMostLikelyVote(candidateName) {
     const allPlayers = this.getPlayers();
-    const voterName = allPlayers[this.revealIndex];
-    this.activeCard.mechanicState.votes[voterName] = candidateName;
-
+    this.activeCard.mechanicState.votes[allPlayers[this.revealIndex]] = candidateName;
     const warn = document.getElementById("mostlikely-warn");
     if (warn) warn.innerText = "";
-
     this.renderCurrentMostLikelyStep();
   },
 
   nextMostLikelyVote(totalPlayers) {
     const allPlayers = this.getPlayers();
     const voterName = allPlayers[this.revealIndex];
-    const chosen = this.activeCard.mechanicState.votes[voterName];
-
-    if (!chosen) {
+    if (!this.activeCard.mechanicState.votes[voterName]) {
       const warn = document.getElementById("mostlikely-warn");
       if (warn) warn.innerText = "Please pick someone before passing!";
       return;
@@ -1618,72 +1379,53 @@ const MechanicsManager = {
     } else {
       this.revealIndex++;
     }
-
     this.renderCurrentMostLikelyStep();
   },
 
   prevMostLikelyVote(totalPlayers) {
-    if (this.revealIndex > 0) {
-      this.revealIndex--;
-    } else {
-      this.currentStep = 0;
-      this.revealIndex = 0;
-    }
+    if (this.revealIndex > 0) this.revealIndex--;
+    else { this.currentStep = 0; this.revealIndex = 0; }
     this.renderCurrentMostLikelyStep();
   },
 
-    cancel() {
+  cancel() {
+    if (this._doneTimer) { clearTimeout(this._doneTimer); this._doneTimer = null; }
     const mech = (this.activeCard && this.activeCard.activeMechanic) ? this.activeCard.activeMechanic.toUpperCase() : "";
-    if (mech.includes("WHO SAID")) {
-      this.resetWhoSaidDraftState();
-    } else if (mech.includes("MOST LIKELY")) {
-      this.resetMostLikelyDraftState();
-    } else {
-      this.resetDraftState();
-    }
+    if (mech.includes("WHO SAID")) this.resetWhoSaidDraftState();
+    else if (mech.includes("MOST LIKELY")) this.resetMostLikelyDraftState();
+    else this.resetDraftState();
 
     const modal = document.getElementById("predict-modal");
-    if (modal) {
-      modal.classList.remove("active");
-    }
+    if (modal) modal.classList.remove("active");
 
     setTimeout(() => {
       const cardModal = document.getElementById("card-modal");
       if (cardModal) {
         cardModal.classList.add("active");
-        if (typeof renderCard === "function") {
-          renderCard(false);
-        }
+        if (typeof renderCard === "function") renderCard(false);
       }
     }, 120);
   },
 
   finish() {
-    if (this.activeCard) {
-      this.activeCard.mechanicState = { isCompleted: true };
-    }
+    if (this._doneTimer) { clearTimeout(this._doneTimer); this._doneTimer = null; }
+    if (this.activeCard) this.activeCard.mechanicState = { isCompleted: true };
     this.currentStep = 0;
     this.revealIndex = 0;
 
     const modal = document.getElementById("predict-modal");
-    if (modal) {
-      modal.classList.remove("active");
-    }
+    if (modal) modal.classList.remove("active");
 
     setTimeout(() => {
       const cardModal = document.getElementById("card-modal");
-      if (cardModal) {
-        cardModal.classList.add("active");
-      }
-
-      if (typeof nextCard === "function") {
-        nextCard();
-      }
+      if (cardModal) cardModal.classList.add("active");
+      if (typeof nextCard === "function") nextCard();
     }, 70);
   }
 };
+
 // ==========================================
-// 0. UNIFIED STORAGE LAYER (آمن ومعزول - LocalStorage مستمر)
+// 4. UNIFIED STORAGE LAYER
 // ==========================================
 const GameStorage = {
   KEYS: {
@@ -1707,63 +1449,43 @@ const GameStorage = {
         viewedCardIds: Array.isArray(parsed.viewedCardIds) ? parsed.viewedCardIds : []
       };
     } catch (e) {
-      console.warn("Storage read error (History):", e);
       return typeof getInitialGameState === "function" ? getInitialGameState() : {};
     }
   },
 
   saveHistory(history) {
-    try {
-      localStorage.setItem(this.KEYS.HISTORY, JSON.stringify(history));
-    } catch (e) {
-      console.warn("Storage write error (History):", e);
-    }
+    try { localStorage.setItem(this.KEYS.HISTORY, JSON.stringify(history)); } catch (e) {}
   },
 
   getActiveSession() {
     try {
       const data = localStorage.getItem(this.KEYS.SESSION);
       return data ? JSON.parse(data) : null;
-    } catch (e) {
-      console.warn("Storage read error (Session):", e);
-      return null;
-    }
+    } catch (e) { return null; }
   },
 
   saveActiveSession(session) {
-    try {
-      localStorage.setItem(this.KEYS.SESSION, JSON.stringify(session));
-    } catch (e) {
-      console.warn("Storage write error (Session):", e);
-    }
+    try { localStorage.setItem(this.KEYS.SESSION, JSON.stringify(session)); } catch (e) {}
   },
 
-  clearActiveSession() {
-    localStorage.removeItem(this.KEYS.SESSION);
-  },
+  clearActiveSession() { localStorage.removeItem(this.KEYS.SESSION); },
 
   getPlayers() {
     try {
       const data = localStorage.getItem(this.KEYS.PLAYERS);
       return data ? JSON.parse(data) : null;
-    } catch (e) {
-      return null;
-    }
+    } catch (e) { return null; }
   },
 
   savePlayers(players) {
-    try {
-      localStorage.setItem(this.KEYS.PLAYERS, JSON.stringify(players));
-    } catch (e) {}
+    try { localStorage.setItem(this.KEYS.PLAYERS, JSON.stringify(players)); } catch (e) {}
   },
 
   getCurrentLevelKey() {
     return localStorage.getItem(this.KEYS.CURRENT_LEVEL) || "dew";
   },
 
-  saveCurrentLevelKey(key) {
-    localStorage.setItem(this.KEYS.CURRENT_LEVEL, key);
-  },
+  saveCurrentLevelKey(key) { localStorage.setItem(this.KEYS.CURRENT_LEVEL, key); },
 
   getHighestUnlocked() {
     return parseInt(localStorage.getItem(this.KEYS.HIGHEST_UNLOCKED) || "0", 10);
@@ -1783,9 +1505,7 @@ const GameStorage = {
   },
 
   saveStagePointers(pointers) {
-    try {
-      localStorage.setItem(this.KEYS.STAGE_POINTERS, JSON.stringify(pointers));
-    } catch (e) {}
+    try { localStorage.setItem(this.KEYS.STAGE_POINTERS, JSON.stringify(pointers)); } catch (e) {}
   },
 
   clearAll() {
@@ -1795,10 +1515,8 @@ const GameStorage = {
 };
 
 // ==========================================
-// 4. CORE CONTROLLER (MAP, CARDS & FLOW)
+// 5. CORE CONTROLLER (MAP, CARDS & FLOW)
 // ==========================================
-
-// Global State
 window.playersList = [];
 let sessionData = null;
 let currentLevelKey = GameStorage.getCurrentLevelKey();
@@ -1807,53 +1525,37 @@ let sessionPlayerQueue = [];
 let isAnimatingCard = false;
 
 const LEVEL_KEYS = ["dew", "sunny", "gentle", "sprouting", "bloom"];
-
 let highestUnlockedIdx = GameStorage.getHighestUnlocked();
 let stageCardPointers = GameStorage.getStagePointers();
 
-// ==========================================
-// [SECTION 1] تشغيل الخريطة والتهيئة الأولية
-// ==========================================
 function initBlossomIsland() {
   const savedPlayers = GameStorage.getPlayers();
-
   if (savedPlayers && Array.isArray(savedPlayers) && savedPlayers.length >= 3) {
     window.playersList = [...savedPlayers];
     initPlayerQueue();
   } else {
-    setTimeout(() => {
-      openPlayersModal(true);
-    }, 300);
+    setTimeout(() => { openPlayersModal(true); }, 300);
   }
 
-  // فحص أمان: إذا وصل اللاعب للصخرة 5 وأنهى الجولة السابقة ثم خرج دون متابعة
   if (highestUnlockedIdx >= 5) {
     startNewReplayRound();
   }
 
   sessionData = GameStorage.getActiveSession();
-
   if (!sessionData) {
     const savedHistory = GameStorage.getHistory();
     sessionData = generateSessionCards(savedHistory);
     GameStorage.saveActiveSession(sessionData);
-    
-    const finalHistory = sessionData.updatedHistory || savedHistory;
-    GameStorage.saveHistory(finalHistory);
+    GameStorage.saveHistory(sessionData.updatedHistory || savedHistory);
   }
 
   updateProgressBar();
   updateNodeStatuses();
 
   const mapImg = document.getElementById("blossom-map-img");
-  if (mapImg) {
-    mapImg.classList.add("loaded");
-  }
+  if (mapImg) mapImg.classList.add("loaded");
 }
 
-// ==========================================
-// [SECTION 2] تحديث شريط التقدم والنسبة المئوية (مع رمز اللانهاية ∞)
-// ==========================================
 function updateProgressBar() {
   const history = GameStorage.getHistory();
   const total = history.viewedCardIds ? history.viewedCardIds.length : 0;
@@ -1876,9 +1578,6 @@ function updateProgressBar() {
   fill.style.width = `${pct}%`;
 }
 
-// ==========================================
-// [SECTION 3] إدارة مسار الصخور ومستويات الفتح
-// ==========================================
 function updateNodeStatuses() {
   for (let i = 1; i <= 5; i++) {
     const node = document.getElementById(`rock-step-${i}`);
@@ -1906,7 +1605,6 @@ function handleNodeClick(levelNum) {
   }
 
   const targetIdx = levelNum - 1;
-
   if (targetIdx > highestUnlockedIdx) {
     const lockModal = document.getElementById("level-intro-modal");
     if (lockModal) lockModal.classList.add("active");
@@ -1923,9 +1621,6 @@ function closeLevelIntroModal() {
   if (lockModal) lockModal.classList.remove("active");
 }
 
-// ==========================================
-// [SECTION 4] عرض الكروت والإنترو والتنقل
-// ==========================================
 const levelIntros = {  
   dew: { visualClass: "card-lvl-dew", description: "Let’s start easy, get comfortable, and discover the little things about each other" },  
   sunny: { visualClass: "card-lvl-sunny", description: "Now, let’s go beyond preferences and share a few stories along the way" },  
@@ -1984,12 +1679,7 @@ function getCardRenderData(levelKey, cardNum) {
     if (mechType.includes("PREDICT")) {
       const currentPlayers = window.playersList || [];
       if (!card.mechanicState || !currentPlayers.includes(card.mechanicState.targetPlayer)) {
-        card.mechanicState = {
-          targetPlayer: getNextFairPlayer(),
-          guesses: {},
-          truth: "",
-          isCompleted: false
-        };
+        card.mechanicState = { targetPlayer: getNextFairPlayer(), guesses: {}, truth: "", isCompleted: false };
       }
 
       const target = card.mechanicState.targetPlayer;
@@ -2008,12 +1698,8 @@ function getCardRenderData(levelKey, cardNum) {
         "Well… this should be fun 👀"
       ];
 
-      if (!card.mechanicState.selectedIntro) {
-        card.mechanicState.selectedIntro = introHeadlines[Math.floor(Math.random() * introHeadlines.length)];
-      }
-      if (!card.mechanicState.selectedOutro) {
-        card.mechanicState.selectedOutro = outroPhrases[Math.floor(Math.random() * outroPhrases.length)];
-      }
+      if (!card.mechanicState.selectedIntro) card.mechanicState.selectedIntro = introHeadlines[Math.floor(Math.random() * introHeadlines.length)];
+      if (!card.mechanicState.selectedOutro) card.mechanicState.selectedOutro = outroPhrases[Math.floor(Math.random() * outroPhrases.length)];
 
       contentHtml = `
         <div class="special-intro-title">${card.mechanicState.selectedIntro}</div>
@@ -2082,9 +1768,7 @@ function getCardRenderData(levelKey, cardNum) {
     cardId: card ? card.id : "unknown",
     visualClass: currentIntro ? currentIntro.visualClass : `card-lvl-${levelKey}`,
     numberTag: String(cardNum).padStart(2, "0"),
-    headerBadge: isSpecial 
-      ? { text: "SPECIAL CARD", className: "special-card-badge", color: "" } 
-      : null,
+    headerBadge: isSpecial ? { text: "SPECIAL CARD", className: "special-card-badge", color: "" } : null,
     contentHtml: contentHtml,
     isSpecial: isSpecial,
     cardRef: card
@@ -2126,17 +1810,15 @@ function renderCard(animate = false, direction = "next") {
     }
   }
 
-    questionEl.innerHTML = data.contentHtml;
+  questionEl.innerHTML = data.contentHtml;
 
   if (data.cardRef) {
     recordCardProgress(data.cardRef.id);
   }
 
-  // تشغيل الصوت حسب نوع البطاقة
-  if (animate && typeof SoundManager !== "undefined") {
-    if (data.isSpecial) {
-      SoundManager.play('specialCard');
-    }
+  // صوت الكرت المميز فقط
+  if (animate && data.isSpecial) {
+    SoundManager.play('specialCard');
   }
 
   if (animate) {
@@ -2147,7 +1829,7 @@ function renderCard(animate = false, direction = "next") {
     setTimeout(() => {
       cardEl.classList.remove(flipClass);
       isAnimatingCard = false;
-    }, data.isSpecial ? 800 : 400);
+    }, data.isSpecial ? 700 : 350);
 
     if (data.isSpecial) {
       setTimeout(() => {
@@ -2155,7 +1837,7 @@ function renderCard(animate = false, direction = "next") {
         if (modal && modal.classList.contains("active")) {
           triggerSparkles();
         }
-      }, 250);
+      }, 200);
     }
   } else {
     isAnimatingCard = false;
@@ -2164,22 +1846,15 @@ function renderCard(animate = false, direction = "next") {
 
 function launchSpecialMechanic(cardIndex) {
   const card = sessionData?.levels?.[currentLevelKey]?.[cardIndex];
-  
-  if (!card) {
-    console.error("Card data not found for stage:", currentLevelKey, "index:", cardIndex);
-    return;
-  }
+  if (!card) return;
 
   if (typeof MechanicsManager !== "undefined" && typeof MechanicsManager.launch === "function") {
     closeCardModal();
     MechanicsManager.launch(card);
-  } else {
-    console.error("MechanicsManager is not defined or launch() is missing in mechanics.js");
   }
 }
 
 function nextCard() {
-  
   if (isAnimatingCard) return;
   
   if (levelCurrentCard < 5) {
@@ -2191,9 +1866,9 @@ function nextCard() {
     isAnimatingCard = true;
     const cardEl = document.getElementById("active-card");
     if (cardEl) {
-      cardEl.style.transition = "opacity 0.35s ease, transform 0.35s ease";
+      cardEl.style.transition = "opacity 0.3s ease, transform 0.3s ease";
       cardEl.style.opacity = "0";
-      cardEl.style.transform = "scale(0.92)";
+      cardEl.style.transform = "scale(0.94)";
     }
 
     setTimeout(() => {
@@ -2207,7 +1882,7 @@ function nextCard() {
         cardEl.style.transition = "";
       }
       isAnimatingCard = false;
-    }, 350);
+    }, 300);
   }
 }
 
@@ -2252,20 +1927,15 @@ function markStageCompleted() {
 
     const history = GameStorage.getHistory();
     const total = history.viewedCardIds ? history.viewedCardIds.length : (history.totalCardsViewed || 0);
-
     const reachedInfinity = localStorage.getItem("alfiria_endless_infinity_reached") === "true";
 
     if (reachedInfinity) {
-      setTimeout(() => {
-        startNewReplayRound();
-      }, 500);
+      setTimeout(() => { startNewReplayRound(); }, 400);
     } else {
-      setTimeout(() => {
-        triggerBloomCompletion(total);
-      }, 500);
+      setTimeout(() => { triggerBloomCompletion(total); }, 400);
     }
   }
-} // <--- تم إضافة هذا القوس الذي كان مفقوداً وكسر الكود بالكامل
+}
 
 function triggerBloomCompletion(total) {
   const modal = document.getElementById("island-completion-modal");
@@ -2276,7 +1946,6 @@ function triggerBloomCompletion(total) {
   if (!modal || !textEl) return;
 
   let isFinalMilestone = total >= 100;
-
   if (isFinalMilestone) {
     localStorage.setItem("alfiria_endless_infinity_reached", "true");
   }
@@ -2288,7 +1957,7 @@ function triggerBloomCompletion(total) {
     title = "You’ve reached full bloom 🌸";
     body = "You’ve made it through every chapter of Blossom Island, but there’s always room for another conversation";
   } else if (total >= 75) {  
-    title = "You’re getting closer 🌸";
+    title = "You’re getting closer";
     body = "You’ve come a long way together, and there’s only one more chapter before the journey reaches its final bloom";
   } else if (total >= 50) {  
     title = "HALFWAY THROUGH 🌸";
@@ -2301,11 +1970,10 @@ function triggerBloomCompletion(total) {
   if (titleEl) {
     titleEl.innerText = title;
     titleEl.className = "scroll-title completion-main-title";
+    titleEl.style.marginBottom = "4px";
   }
 
-  textEl.innerHTML = `
-    <p class="completion-sub-desc">${body}</p>
-  `;
+  textEl.innerHTML = `<p class="completion-sub-desc" style="margin: 0; line-height: 1.35;">${body}</p>`;
 
   if (actionsContainer) {
     actionsContainer.innerHTML = `
@@ -2317,20 +1985,18 @@ function triggerBloomCompletion(total) {
       </button>
     `;
 
-       document.getElementById("completion-exit-btn").onclick = () => {
+    document.getElementById("completion-exit-btn").onclick = () => {
       startNewReplayRound();
       window.location.href = "index.html?from=game";
     };
-  } // <--- هذا القوس كان مفقوداً وكسر الكود بالكامل
-  // تأكد من وجود هذا السطر لتشغيل الصوت فوراً عند فتح رسالة النهاية
-  if (typeof SoundManager !== "undefined") {
-    SoundManager.play('celebration');
   }
+
+  // صوت الاحتفالية
+  SoundManager.play('celebration');
 
   modal.classList.add("active");
   createConfetti();
 }
-
 
 function startNewReplayRound() {
   const modal = document.getElementById("island-completion-modal");
@@ -2348,15 +2014,13 @@ function startNewReplayRound() {
   const history = GameStorage.getHistory();
   sessionData = generateSessionCards(history);
   GameStorage.saveActiveSession(sessionData);
-
-  const finalHistory = sessionData.updatedHistory || history;
-  GameStorage.saveHistory(finalHistory);
+  GameStorage.saveHistory(sessionData.updatedHistory || history);
 
   updateNodeStatuses();
 }
 
 // ==========================================
-// [SECTION 6] إدارة قائمة اللاعبين
+// 6. PLAYERS & QUEUE
 // ==========================================
 function initPlayerQueue() {
   sessionPlayerQueue = [...window.playersList];
@@ -2379,9 +2043,7 @@ function openPlayersModal(isMandatory = false) {
   modal.classList.add("active");
 
   const closeBtn = modal.querySelector(".modal-close-corner-btn");
-  if (closeBtn) {
-    closeBtn.style.display = isMandatory ? "none" : "block";
-  }
+  if (closeBtn) closeBtn.style.display = isMandatory ? "none" : "block";
 
   const err = document.getElementById("players-error-msg");
   if (err) err.innerText = "";
@@ -2485,7 +2147,7 @@ function savePlayersAndContinue() {
 
   const uniqueNames = new Set(validNames);
   if (uniqueNames.size !== validNames.length) {
-    if (err) err.innerText = "Each player must have a unique name ";
+    if (err) err.innerText = "Each player must have a unique name";
     return;
   }
 
@@ -2498,7 +2160,7 @@ function savePlayersAndContinue() {
 }
 
 // ==========================================
-// [SECTION 7] القائمة وخيارات التصفير والتنقل
+// 7. MENU & NAVIGATION
 // ==========================================
 function toggleIslandMenu(e) {
   const evt = e || window.event;
@@ -2507,9 +2169,7 @@ function toggleIslandMenu(e) {
     if (evt.stopImmediatePropagation) evt.stopImmediatePropagation();
   }
   const menu = document.getElementById("island-menu-dropdown");
-  if (menu) {
-    menu.classList.toggle("active");
-  }
+  if (menu) menu.classList.toggle("active");
 }
 
 function closeIslandMenu() {
@@ -2544,13 +2204,14 @@ function returnToWorldMap() {
 }
 
 // ==========================================
-// [SECTION 8] المؤثرات البصرية والمشاركة
+// 8. VISUAL EFFECTS & TIKTOK-STYLE SHARE
 // ==========================================
 function triggerSparkles() {  
-  const symbols = ["✨", "🌸", "⭐", "💫"];
+  const symbols = ["✨", "🌸", "⭐"];
   const screenWidth = window.innerWidth;  
   const screenHeight = window.innerHeight;  
 
+  // تخفيف العدد إلى 12 عنصر فقط لضمان سرعة الهواتف 60fps
   for (let i = 0; i < 35; i++) {  
     const sparkle = document.createElement('div');  
     sparkle.className = 'magic-sparkle';  
@@ -2562,7 +2223,7 @@ function triggerSparkles() {
     sparkle.style.top = `${startY}px`;  
 
     const angle = Math.random() * Math.PI * 2;  
-    const distance = 40 + Math.random() * 80;  
+    const distance = 30 + Math.random() * 50;  
     const tx = Math.cos(angle) * distance;  
     const ty = Math.sin(angle) * distance;  
 
@@ -2571,7 +2232,7 @@ function triggerSparkles() {
     sparkle.style.color = '#fff3c2';  
 
     document.body.appendChild(sparkle);  
-    setTimeout(() => sparkle.remove(), 1200);  
+    setTimeout(() => sparkle.remove(), 1000);  
   }  
 }
 
@@ -2581,18 +2242,18 @@ function createConfetti() {
   container.innerHTML = "";
 
   const colors = ["#ff758c", "#e2c08d", "#ffffff", "#f2a6b6", "#d88a9e"];
-  for (let i = 0; i < 65; i++) {
+  for (let i = 0; i < 40; i++) {
     const c = document.createElement("div");
     c.className = "confetti";
     c.style.left = `${Math.random() * 100}%`;
     c.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
-    c.style.animationDelay = `${Math.random() * 1.5}s`;
+    c.style.animationDelay = `${Math.random() * 1.2}s`;
     container.appendChild(c);
-    setTimeout(() => c.remove(), 3200);
+    setTimeout(() => c.remove(), 2800);
   }
 }
 
-function showCopyToast(message = "Copied!") {
+function showCopyToast(message = "Link Copied!") {
   let toast = document.getElementById("game-copy-toast");
   if (!toast) {
     toast = document.createElement("div");
@@ -2605,77 +2266,167 @@ function showCopyToast(message = "Copied!") {
   if (window.toastTimer) clearTimeout(window.toastTimer);
   window.toastTimer = setTimeout(() => {
     toast.className = "";
-  }, 1200);
+  }, 1400);
 }
 
 function fallbackCopy() {
   if (navigator.clipboard) {
     navigator.clipboard.writeText(window.location.href);
   }
-  showCopyToast("Copied!");
+  showCopyToast("Link Copied!");
 }
 
+   
+// توليد بطاقة مشاركة مخصصة (TikTok / Story Style) ومشاركتها مع الرابط
 async function shareCardImage() {
-  if (!navigator.share || typeof html2canvas === "undefined") {
-    fallbackCopy();
-    return;
-  }
+  const gameUrl = "https://alffiacilckmoney-bit.github.io/Alfiria-/blossom.html";
+  const shareText = `Play Alfiria: Realm of Cards!\n${gameUrl}`;
 
-  try {
-    const canvas = await html2canvas(document.body, {
-      scale: 2,
-      useCORS: true,
-      allowTaint: true,
-      scrollX: 0,
-      scrollY: 0,
-      windowWidth: document.documentElement.offsetWidth,
-      windowHeight: document.documentElement.offsetHeight,
-      ignoreElements: (element) => {
-        return element.classList && (
-          element.classList.contains("card-header-btn") || 
-          element.classList.contains("island-menu-container")
-        );
-      }
-    });
+  // 1. استخراج نص السؤال ورقم الكرت الحالي
+  const questionEl = document.getElementById("card-question-text");
+  const numTag = document.getElementById("card-number-tag");
+  const rawText = questionEl ? questionEl.innerText.trim().replace(/^“|”$/g, '') : "A question from Alfiria";
+  const cardNum = numTag ? numTag.innerText.trim() : "";
 
-    canvas.toBlob(async (blob) => {
-      if (!blob) {
-        fallbackCopy();
-        return;
-      }
+  // 2. إنشاء لوحة رسم بمقاسات القصة (Story: 1080x1920)
+  const canvas = document.createElement("canvas");
+  canvas.width = 1080;
+  canvas.height = 1920;
+  const ctx = canvas.getContext("2d");
 
-      const file = new File([blob], "alfiria-moment.png", { type: "image/png" });
+  // رسم الخلفية الداكنة العميقة
+  ctx.fillStyle = "#070b10";
+  ctx.fillRect(0, 0, 1080, 1920);
 
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            text: window.location.href
-          });
-        } catch (err) {}
+  // هالة توهج خفيفة خلف البطاقة
+  const glow = ctx.createRadialGradient(540, 960, 100, 540, 960, 600);
+  glow.addColorStop(0, "rgba(226, 133, 153, 0.15)");
+  glow.addColorStop(1, "rgba(7, 11, 16, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 1080, 1920);
+
+  // أبعاد البطاقة المركزية (مطابقة للصورة تماماً)
+  const cardW = 860;
+  const cardH = 980;
+  const cardX = (1080 - cardW) / 2;
+  const cardY = 470;
+  const radius = 48;
+
+  // رسم خلفية البطاقة وظلها الفخم
+  ctx.save();
+  ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
+  ctx.shadowBlur = 45;
+  ctx.shadowOffsetY = 20;
+  ctx.fillStyle = "#fcf6ee";
+  ctx.beginPath();
+  ctx.roundRect(cardX, cardY, cardW, cardH, radius);
+  ctx.fill();
+  ctx.restore();
+
+  // إطار رقيق وناعم للبطاقة
+  ctx.strokeStyle = "rgba(180, 140, 150, 0.3)";
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.roundRect(cardX, cardY, cardW, cardH, radius);
+  ctx.stroke();
+
+  // رسم أيقونة الإغلاق (✕) وأيقونة المشاركة (↗) بأعلى البطاقة
+  ctx.fillStyle = "#a17887";
+  ctx.font = "bold 32px sans-serif";
+  ctx.fillText("✕", cardX + 50, cardY + 70);
+  ctx.fillText("↗", cardX + cardW - 75, cardY + 70);
+
+  // رسم نص السؤال في منتصف البطاقة بدقة وتوزيع أسطر متناسق
+  ctx.fillStyle = "#2c171d";
+  ctx.font = "italic 44px 'Playfair Display', Georgia, serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  function wrapText(context, text, x, y, maxWidth, lineHeight) {
+    const words = text.split(" ");
+    let line = "";
+    const lines = [];
+
+    for (let n = 0; n < words.length; n++) {
+      const testLine = line + words[n] + " ";
+      const metrics = context.measureText(testLine);
+      if (metrics.width > maxWidth && n > 0) {
+        lines.push(line.trim());
+        line = words[n] + " ";
       } else {
-        try {
-          await navigator.share({
-            url: window.location.href
-          });
-        } catch (err) {
-          fallbackCopy();
-        }
+        line = testLine;
       }
-    }, "image/png");
+    }
+    lines.push(line.trim());
 
-  } catch (error) {
-    console.error("Screenshot error:", error);
-    fallbackCopy();
+    const startY = y - ((lines.length - 1) * lineHeight) / 2;
+    for (let k = 0; k < lines.length; k++) {
+      context.fillText(lines[k], x, startY + (k * lineHeight));
+    }
   }
+
+  wrapText(ctx, rawText, 540, cardY + (cardH / 2) - 30, cardW - 140, 68);
+
+  // رقم الكرت في أسفل البطاقة
+  if (cardNum) {
+    ctx.fillStyle = "#a17887";
+    ctx.font = "bold 30px 'Cinzel', serif";
+    ctx.fillText(cardNum, 540, cardY + cardH - 85);
+  }
+
+  // التذييل في أسفل الشاشة (اسم اللعبة ورابط الموقع)
+  ctx.fillStyle = "#e2c08d";
+  ctx.font = "bold 36px 'Cinzel', Georgia, serif";
+  ctx.letterSpacing = "4px";
+
+  ctx.fillStyle = "rgba(245, 229, 201, 0.75)";
+  ctx.font = "26px sans-serif";
+  ctx.letterSpacing = "1px";
+  ctx.fillText("alffiacilckmoney-bit.github.io/Alfiria-", 540, 1660);
+
+  // 3. تحويل الرسمة إلى صورة ومشاركتها عبر المتصفح
+  canvas.toBlob(async (blob) => {
+    if (!blob) {
+      fallbackCopy();
+      return;
+    }
+
+    const file = new File([blob], "alfiria-card.png", { type: "image/png" });
+
+    // إذا كان الهاتف يدعم مشاركة الملفات (iOS / Android Safari & Chrome)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          text: shareText
+        });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return; // المستخدم ألغى القائمة بنفسه
+      }
+    }
+
+    // بديل في حال عدم دعم مشاركة الصور المباشرة في النظام:
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Alfiria - Realm of Cards",
+          text: shareText,
+          url: gameUrl
+        });
+        return;
+      } catch (e) {}
+    }
+
+    fallbackCopy();
+  }, "image/png");
 }
 
 
-// ============================================================================
-// مستمع النقر بالخارج العام (إغلاق المنيو والنوافذ المنبثقة عند النقر بالخارج)
-// ============================================================================
+// ==========================================
+// 9. GLOBAL LISTENERS
+// ==========================================
 document.addEventListener("click", (e) => {
-  // إغلاق المنيو إذا نقر اللاعب خارجها
   const menu = document.getElementById("island-menu-dropdown");
   const menuBtn = document.getElementById("island-menu-btn");
   if (menu && menu.classList.contains("active")) {
@@ -2684,17 +2435,16 @@ document.addEventListener("click", (e) => {
     }
   }
 
-  // إغلاق نافذة المسار المقفل عند النقر على الخلفية
-  if (e.target.id === "level-intro-modal") {
-    closeLevelIntroModal();
-  }
+  if (e.target.id === "level-intro-modal") closeLevelIntroModal();
+  if (e.target.id === "reset-confirm-modal") closeResetConfirm();
+});
 
-  // إغلاق نافذة تأكيد التصفير (Reset) عند النقر على الخلفية
-  if (e.target.id === "reset-confirm-modal") {
-    closeResetConfirm();
+// نهاية ملف game.js
+window.addEventListener("DOMContentLoaded", () => {
+  if (document.getElementById("blossom-map-img")) {
+    initBlossomIsland();
   }
 });
 
-// تشغيل اللعبة عند اكتمال تحميل الصفحة
-window.addEventListener("DOMContentLoaded", initBlossomIsland);
+
 
