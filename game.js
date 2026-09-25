@@ -2277,67 +2277,103 @@ function fallbackCopy() {
 }
 
    
-// توليد بطاقة مشاركة مخصصة (TikTok / Story Style) ومشاركتها مع الرابط
+
 async function shareCardImage() {
   const gameUrl = "https://alffiacilckmoney-bit.github.io/Alfiria-/blossom.html";
   const shareText = `Play Alfiria: Realm of Cards!\n${gameUrl}`;
 
-  // 1. استخراج نص السؤال ورقم الكرت الحالي
   const questionEl = document.getElementById("card-question-text");
   const numTag = document.getElementById("card-number-tag");
-  const rawText = questionEl ? questionEl.innerText.trim().replace(/^“|”$/g, '') : "A question from Alfiria";
+  const activeCardEl = document.getElementById("active-card");
+  
+  const rawText = questionEl ? questionEl.innerText.trim().replace(/^“|”$/g, '') : "";
   const cardNum = numTag ? numTag.innerText.trim() : "";
 
-  // 2. إنشاء لوحة رسم بمقاسات القصة (Story: 1080x1920)
+  let cardBgColor = "#fcf6ee";
+  let textColor = "#2c171d";
+  let subColor = "#a17887";
+  let borderColor = "rgba(180, 140, 150, 0.35)";
+
+  if (activeCardEl) {
+    if (activeCardEl.classList.contains("card-lvl-sprouting")) {
+      cardBgColor = "#e9f2e3";
+      textColor = "#1e2b1d";
+      subColor = "#667865";
+      borderColor = "rgba(125, 155, 125, 0.35)";
+    } else if (activeCardEl.classList.contains("card-lvl-gentle")) {
+      cardBgColor = "#f5edf2";
+      textColor = "#301d29";
+      subColor = "#8c6b81";
+      borderColor = "rgba(165, 130, 155, 0.35)";
+    } else if (activeCardEl.classList.contains("card-lvl-sunny")) {
+      cardBgColor = "#fdf3e7";
+      textColor = "#382413";
+      subColor = "#9e7450";
+      borderColor = "rgba(180, 140, 110, 0.35)";
+    }
+  }
+
   const canvas = document.createElement("canvas");
   canvas.width = 1080;
   canvas.height = 1920;
   const ctx = canvas.getContext("2d");
 
-  // رسم الخلفية الداكنة العميقة
-  ctx.fillStyle = "#070b10";
+  function drawRoundedRect(c, x, y, width, height, radius) {
+    c.beginPath();
+    c.moveTo(x + radius, y);
+    c.lineTo(x + width - radius, y);
+    c.arcTo(x + width, y, x + width, y + radius, radius);
+    c.lineTo(x + width, y + height - radius);
+    c.arcTo(x + width, y + height, x + width - radius, y + height, radius);
+    c.lineTo(x + radius, y + height);
+    c.arcTo(x, y + height, x, y + height - radius, radius);
+    c.lineTo(x, y + radius);
+    c.arcTo(x, y, x + radius, y, radius);
+    c.closePath();
+  }
+
+  // تدرج الخلفية المطابق لمشهد الحديقة الحقيقي
+  const bgGrad = ctx.createLinearGradient(0, 0, 1080, 1920);
+  bgGrad.addColorStop(0, "#1f101b");
+  bgGrad.addColorStop(0.35, "#331a2c");
+  bgGrad.addColorStop(0.7, "#1a121d");
+  bgGrad.addColorStop(1, "#0d0910");
+  ctx.fillStyle = bgGrad;
   ctx.fillRect(0, 0, 1080, 1920);
 
-  // هالة توهج خفيفة خلف البطاقة
-  const glow = ctx.createRadialGradient(540, 960, 100, 540, 960, 600);
-  glow.addColorStop(0, "rgba(226, 133, 153, 0.15)");
-  glow.addColorStop(1, "rgba(7, 11, 16, 0)");
-  ctx.fillStyle = glow;
+  const radial = ctx.createRadialGradient(540, 750, 80, 540, 750, 750);
+  radial.addColorStop(0, "rgba(226, 133, 153, 0.28)");
+  radial.addColorStop(0.5, "rgba(180, 90, 120, 0.12)");
+  radial.addColorStop(1, "rgba(0, 0, 0, 0)");
+  ctx.fillStyle = radial;
   ctx.fillRect(0, 0, 1080, 1920);
 
-  // أبعاد البطاقة المركزية (مطابقة للصورة تماماً)
-  const cardW = 860;
-  const cardH = 980;
+  const cardW = 880;
+  const cardH = 960;
   const cardX = (1080 - cardW) / 2;
-  const cardY = 470;
-  const radius = 48;
+  const cardY = (1920 - cardH) / 2;
+  const radius = 46;
 
-  // رسم خلفية البطاقة وظلها الفخم
   ctx.save();
-  ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
-  ctx.shadowBlur = 45;
-  ctx.shadowOffsetY = 20;
-  ctx.fillStyle = "#fcf6ee";
-  ctx.beginPath();
-  ctx.roundRect(cardX, cardY, cardW, cardH, radius);
+  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
+  ctx.shadowBlur = 40;
+  ctx.shadowOffsetY = 18;
+  ctx.fillStyle = cardBgColor;
+  drawRoundedRect(ctx, cardX, cardY, cardW, cardH, radius);
   ctx.fill();
   ctx.restore();
 
-  // إطار رقيق وناعم للبطاقة
-  ctx.strokeStyle = "rgba(180, 140, 150, 0.3)";
-  ctx.lineWidth = 3;
-  ctx.beginPath();
-  ctx.roundRect(cardX, cardY, cardW, cardH, radius);
+  ctx.strokeStyle = borderColor;
+  ctx.lineWidth = 2.5;
+  drawRoundedRect(ctx, cardX, cardY, cardW, cardH, radius);
   ctx.stroke();
 
-  // رسم أيقونة الإغلاق (✕) وأيقونة المشاركة (↗) بأعلى البطاقة
-  ctx.fillStyle = "#a17887";
+  ctx.fillStyle = subColor;
   ctx.font = "bold 32px sans-serif";
-  ctx.fillText("✕", cardX + 50, cardY + 70);
+  ctx.fillText("✕", cardX + 48, cardY + 70);
   ctx.fillText("↗", cardX + cardW - 75, cardY + 70);
 
-  // رسم نص السؤال في منتصف البطاقة بدقة وتوزيع أسطر متناسق
-  ctx.fillStyle = "#2c171d";
+  ctx.fillStyle = textColor;
   ctx.font = "italic 44px 'Playfair Display', Georgia, serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
@@ -2365,64 +2401,57 @@ async function shareCardImage() {
     }
   }
 
-  wrapText(ctx, rawText, 540, cardY + (cardH / 2) - 30, cardW - 140, 68);
+  wrapText(ctx, rawText, 540, cardY + (cardH / 2) - 25, cardW - 140, 68);
 
-  // رقم الكرت في أسفل البطاقة
   if (cardNum) {
-    ctx.fillStyle = "#a17887";
-    ctx.font = "bold 30px 'Cinzel', serif";
+    ctx.fillStyle = subColor;
+    ctx.font = "bold 28px 'Cinzel', serif";
     ctx.fillText(cardNum, 540, cardY + cardH - 85);
+
+    ctx.font = "bold 26px sans-serif";
+    ctx.fillStyle = "rgba(140, 110, 130, 0.4)";
+    ctx.fillText("<", cardX + 52, cardY + cardH - 85);
+    ctx.fillText(">", cardX + cardW - 52, cardY + cardH - 85);
   }
 
-  // التذييل في أسفل الشاشة (اسم اللعبة ورابط الموقع)
-  ctx.fillStyle = "#e2c08d";
-  ctx.font = "bold 36px 'Cinzel', Georgia, serif";
-  ctx.letterSpacing = "4px";
-
-  ctx.fillStyle = "rgba(245, 229, 201, 0.75)";
-  ctx.font = "26px sans-serif";
-  ctx.letterSpacing = "1px";
-  ctx.fillText("alffiacilckmoney-bit.github.io/Alfiria-", 540, 1660);
-
-  // 3. تحويل الرسمة إلى صورة ومشاركتها عبر المتصفح
-  canvas.toBlob(async (blob) => {
-    if (!blob) {
-      fallbackCopy();
-      return;
-    }
-
-    const file = new File([blob], "alfiria-card.png", { type: "image/png" });
-
-    // إذا كان الهاتف يدعم مشاركة الملفات (iOS / Android Safari & Chrome)
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try {
-        await navigator.share({
-          files: [file],
-          text: shareText
-        });
+  try {
+    canvas.toBlob(async (blob) => {
+      if (!blob) {
+        fallbackCopy();
         return;
-      } catch (err) {
-        if (err.name === 'AbortError') return; // المستخدم ألغى القائمة بنفسه
       }
-    }
 
-    // بديل في حال عدم دعم مشاركة الصور المباشرة في النظام:
-    if (navigator.share) {
-      try {
-        await navigator.share({
-          title: "Alfiria - Realm of Cards",
-          text: shareText,
-          url: gameUrl
-        });
-        return;
-      } catch (e) {}
-    }
+      const file = new File([blob], "alfiria-card.png", { type: "image/png" });
 
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({
+            files: [file],
+            text: shareText
+          });
+          return;
+        } catch (err) {
+          if (err.name === 'AbortError') return;
+        }
+      }
+
+      if (navigator.share) {
+        try {
+          await navigator.share({
+            title: "Alfiria - Realm of Cards",
+            text: shareText,
+            url: gameUrl
+          });
+          return;
+        } catch (e) {}
+      }
+
+      fallbackCopy();
+    }, "image/png");
+  } catch (err) {
     fallbackCopy();
-  }, "image/png");
-}
-
-
+  }
+}    
 // ==========================================
 // 9. GLOBAL LISTENERS
 // ==========================================
