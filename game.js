@@ -2277,7 +2277,7 @@ function fallbackCopy() {
 }
 
 
-// مشاركة لقطة أصلية بخلفية كريمية دافئة وتدعم التابلت والهواتف
+// مشاركة بطاقة موحدة فائقة الدقة (Story 1080x1920) بخلفية الجزيرة الحقيقية
 async function shareCardImage() {
   const gameUrl = "https://alffiacilckmoney-bit.github.io/Alfiria-/blossom.html";
   const shareText = `Play Alfiria: Realm of Cards!\n${gameUrl}`;
@@ -2290,43 +2290,43 @@ async function shareCardImage() {
   const rawText = questionEl ? questionEl.innerText.trim().replace(/^“|”$/g, '') : "";
   const cardNum = numTag ? numTag.innerText.trim() : "";
 
-  // مطابقة لون الكرت حسب المرحلة
+  // 2. مطابقة لون الكرت بدقة حسب المرحلة
   let cardBgColor = "#fcf6ee";
-  let textColor = "#2c171d";
-  let subColor = "#a17887";
-  let borderColor = "rgba(180, 140, 150, 0.35)";
+  let textColor = "#22141a";
+  let subColor = "#8c6070";
+  let borderColor = "rgba(180, 140, 150, 0.4)";
 
   if (activeCardEl) {
     if (activeCardEl.classList.contains("card-lvl-sprouting")) {
-      cardBgColor = "#e9f2e3";
-      textColor = "#1e2b1d";
-      subColor = "#667865";
-      borderColor = "rgba(125, 155, 125, 0.35)";
+      cardBgColor = "#eaf2e4";
+      textColor = "#192618";
+      subColor = "#5a6e59";
+      borderColor = "rgba(125, 155, 125, 0.4)";
     } else if (activeCardEl.classList.contains("card-lvl-gentle")) {
-      cardBgColor = "#f5edf2";
-      textColor = "#301d29";
-      subColor = "#8c6b81";
-      borderColor = "rgba(165, 130, 155, 0.35)";
+      cardBgColor = "#f6edf3";
+      textColor = "#2d1a26";
+      subColor = "#7f5973";
+      borderColor = "rgba(165, 130, 155, 0.4)";
     } else if (activeCardEl.classList.contains("card-lvl-sunny")) {
       cardBgColor = "#fdf3e7";
-      textColor = "#382413";
-      subColor = "#9e7450";
-      borderColor = "rgba(180, 140, 110, 0.35)";
+      textColor = "#331f0e";
+      subColor = "#8a613d";
+      borderColor = "rgba(180, 140, 110, 0.4)";
     }
   }
 
-  // 2. ضبط أبعاد الرسم لتطابق شاشة جهاز اللاعب (تابلت أو هاتف) بدقة عالية (Retina 2x)
-  const screenW = window.innerWidth;
-  const screenH = window.innerHeight;
-  const scale = 2; // جودة فائقة الوضوح
-
+  // 3. أبعاد قياسية ثابتة لجميع الأجهزة (Story: 1080 × 1920) تضمن توحيد الشكل على الهاتف والتابلت
+  const canvasW = 1080;
+  const canvasH = 1920;
   const canvas = document.createElement("canvas");
-  canvas.width = screenW * scale;
-  canvas.height = screenH * scale;
+  canvas.width = canvasW;
+  canvas.height = canvasH;
   const ctx = canvas.getContext("2d");
-  ctx.scale(scale, scale);
 
-  // دالة رسم الحواف المستديرة الآمنة لجميع الأجهزة
+  // تحسين جودة النصوص ونقاء الحواف
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+
   function drawRoundedRect(c, x, y, width, height, radius) {
     c.beginPath();
     c.moveTo(x + radius, y);
@@ -2341,43 +2341,60 @@ async function shareCardImage() {
     c.closePath();
   }
 
-  // 3. رسم خلفية كريمية دافئة ومريحة (Warm Parchment / Cream Glow)
-  const bgGrad = ctx.createLinearGradient(0, 0, screenW, screenH);
-  bgGrad.addColorStop(0, "#ece2d0");   // بيج كريمي دافئ ناعم
-  bgGrad.addColorStop(0.5, "#f7efe3"); // درجة أفتح في المنتصف تبرز الكرت
-  bgGrad.addColorStop(1, "#e5d7c3");   // تدرج كريمي رملي ناعم بالأسفل
-  ctx.fillStyle = bgGrad;
-  ctx.fillRect(0, 0, screenW, screenH);
+  // 4. رسم صورة خلفية الجزيرة الحقيقية (بأبعاد متناسقة ومريحة)
+  const mapImgSrc = "https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1600/v1786495008/high_quality_2K_202608120102_1_1.jpg";
+  
+  const loadBgImage = () => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = mapImgSrc;
+    });
+  };
 
-  // هالة ضوئية دافئة ذهبية خفيفة جداً لإعطاء عمق بصري
-  const glow = ctx.createRadialGradient(screenW / 2, screenH / 2, 40, screenW / 2, screenH / 2, screenW * 0.75);
-  glow.addColorStop(0, "rgba(255, 255, 255, 0.55)");
-  glow.addColorStop(0.6, "rgba(240, 226, 206, 0.25)");
-  glow.addColorStop(1, "rgba(215, 195, 172, 0)");
-  ctx.fillStyle = glow;
-  ctx.fillRect(0, 0, screenW, screenH);
+  const bgImg = await loadBgImage();
 
-  // 4. أبعاد البطاقة: تتكيف تلقائياً (سواء كان هاتفاً عمودياً أو تابلت عريضاً)
-  let cardW, cardH;
-  if (screenW > screenH) {
-    // تابلت بالعرض
-    cardW = Math.min(540, screenW * 0.55);
-    cardH = Math.min(420, screenH * 0.72);
+  if (bgImg) {
+    // رسم الصورة بنظام Cover ثابت
+    const imgRatio = bgImg.width / bgImg.height;
+    const targetRatio = canvasW / canvasH;
+    let dw, dh, dx, dy;
+
+    if (imgRatio > targetRatio) {
+      dh = canvasH;
+      dw = canvasH * imgRatio;
+      dx = (canvasW - dw) / 2;
+      dy = 0;
+    } else {
+      dw = canvasW;
+      dh = canvasW / imgRatio;
+      dx = 0;
+      dy = (canvasH - dh) / 2;
+    }
+    ctx.drawImage(bgImg, dx, dy, dw, dh);
   } else {
-    // هاتف طولي
-    cardW = Math.min(380, screenW * 0.88);
-    cardH = Math.min(480, screenH * 0.65);
+    ctx.fillStyle = "#22111c";
+    ctx.fillRect(0, 0, canvasW, canvasH);
   }
 
-  const cardX = (screenW - cardW) / 2;
-  const cardY = (screenH - cardH) / 2;
-  const radius = Math.min(28, cardW * 0.08);
+  // طبقة تعتيم ناعمة جداً تبرز البطاقة دون حجب جمال الجزيرة
+  ctx.fillStyle = "rgba(10, 14, 22, 0.58)";
+  ctx.fillRect(0, 0, canvasW, canvasH);
 
-  // رسم خلفية الكرت وظل ناعم يعزز بروز الكرت عن الخلفية الكريمية
+  // 5. رسم البطاقة المركزية (أبعاد ثابتة ومريحة للستوري)
+  const cardW = 860;
+  const cardH = 980;
+  const cardX = (canvasW - cardW) / 2;
+  const cardY = (canvasH - cardH) / 2;
+  const radius = 48;
+
+  // ظل البطاقة
   ctx.save();
-  ctx.shadowColor = "rgba(100, 75, 60, 0.18)";
-  ctx.shadowBlur = 30;
-  ctx.shadowOffsetY = 14;
+  ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
+  ctx.shadowBlur = 45;
+  ctx.shadowOffsetY = 20;
   ctx.fillStyle = cardBgColor;
   drawRoundedRect(ctx, cardX, cardY, cardW, cardH, radius);
   ctx.fill();
@@ -2385,20 +2402,19 @@ async function shareCardImage() {
 
   // إطار الكرت
   ctx.strokeStyle = borderColor;
-  ctx.lineWidth = 1.8;
+  ctx.lineWidth = 3;
   drawRoundedRect(ctx, cardX, cardY, cardW, cardH, radius);
   ctx.stroke();
 
-  // الأيقونات في أعلى الكرت (✕ و ↗)
+  // أيقونات الزوايا (✕ و ↗)
   ctx.fillStyle = subColor;
-  ctx.font = `bold ${Math.round(cardW * 0.045)}px sans-serif`;
-  ctx.fillText("✕", cardX + (cardW * 0.07), cardY + (cardH * 0.1));
-  ctx.fillText("↗", cardX + cardW - (cardW * 0.1), cardY + (cardH * 0.1));
+  ctx.font = "bold 34px sans-serif";
+  ctx.fillText("✕", cardX + 50, cardY + 70);
+  ctx.fillText("↗", cardX + cardW - 75, cardY + 70);
 
-  // رسم السؤال بخط إيطاليك أنيق ومتجاوب
+  // 6. رسم نص السؤال فائق الحدة والوضوح (Ultra-Sharp Text)
   ctx.fillStyle = textColor;
-  const fontSize = Math.max(16, Math.min(22, Math.round(cardW * 0.052)));
-  ctx.font = `italic ${fontSize}px 'Playfair Display', Georgia, serif`;
+  ctx.font = "italic 46px 'Playfair Display', Georgia, serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
@@ -2425,21 +2441,21 @@ async function shareCardImage() {
     }
   }
 
-  wrapText(ctx, rawText, screenW / 2, cardY + (cardH / 2) - 10, cardW * 0.82, fontSize * 1.5);
+  wrapText(ctx, rawText, canvasW / 2, cardY + (cardH / 2) - 25, cardW - 130, 70);
 
   // رقم الكرت وأسهم التنقل
   if (cardNum) {
     ctx.fillStyle = subColor;
-    ctx.font = `bold ${Math.round(cardW * 0.038)}px 'Cinzel', serif`;
-    ctx.fillText(cardNum, screenW / 2, cardY + cardH - (cardH * 0.09));
+    ctx.font = "bold 32px 'Cinzel', serif";
+    ctx.fillText(cardNum, canvasW / 2, cardY + cardH - 85);
 
-    ctx.font = `bold ${Math.round(cardW * 0.04)}px sans-serif`;
-    ctx.fillStyle = "rgba(140, 110, 130, 0.45)";
-    ctx.fillText("<", cardX + (cardW * 0.07), cardY + cardH - (cardH * 0.09));
-    ctx.fillText(">", cardX + cardW - (cardW * 0.07), cardY + cardH - (cardH * 0.09));
+    ctx.font = "bold 30px sans-serif";
+    ctx.fillStyle = "rgba(120, 90, 110, 0.45)";
+    ctx.fillText("<", cardX + 55, cardY + cardH - 85);
+    ctx.fillText(">", cardX + cardW - 55, cardY + cardH - 85);
   }
 
-  // 5. استخراج الصورة ومشاركتها مع الرابط في النص الخارجي فقط
+  // 7. تصدير الصورة ومشاركتها مع الرابط في النص الخارجي فقط
   try {
     canvas.toBlob(async (blob) => {
       if (!blob) {
@@ -2478,7 +2494,6 @@ async function shareCardImage() {
     fallbackCopy();
   }
 }
-
 
 // ==========================================
 // 9. GLOBAL LISTENERS
