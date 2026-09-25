@@ -2276,7 +2276,8 @@ function fallbackCopy() {
   showCopyToast("Link Copied!");
 }
 
-// مشاركة لقطة أصلية بخلفية الخريطة الحقيقية وتدعم التابلت والهواتف
+
+// مشاركة لقطة أصلية بخلفية كريمية دافئة وتدعم التابلت والهواتف
 async function shareCardImage() {
   const gameUrl = "https://alffiacilckmoney-bit.github.io/Alfiria-/blossom.html";
   const shareText = `Play Alfiria: Realm of Cards!\n${gameUrl}`;
@@ -2340,46 +2341,20 @@ async function shareCardImage() {
     c.closePath();
   }
 
-  // 3. تحميل صورة الخريطة الأصلية بأمان ورسمها كخلفية حقيقية
-  const mapImgSrc = "https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1600/v1786495008/high_quality_2K_202608120102_1_1.jpg";
-  
-  const loadBgImage = () => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = mapImgSrc;
-    });
-  };
+  // 3. رسم خلفية كريمية دافئة ومريحة (Warm Parchment / Cream Glow)
+  const bgGrad = ctx.createLinearGradient(0, 0, screenW, screenH);
+  bgGrad.addColorStop(0, "#ece2d0");   // بيج كريمي دافئ ناعم
+  bgGrad.addColorStop(0.5, "#f7efe3"); // درجة أفتح في المنتصف تبرز الكرت
+  bgGrad.addColorStop(1, "#e5d7c3");   // تدرج كريمي رملي ناعم بالأسفل
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, screenW, screenH);
 
-  const bgImg = await loadBgImage();
-
-  if (bgImg) {
-    // رسم الصورة بنمط تغطية كاملة (cover) لتناسب شاشات التابلت أو الهاتف تماماً
-    const imgRatio = bgImg.width / bgImg.height;
-    const screenRatio = screenW / screenH;
-    let dw, dh, dx, dy;
-
-    if (imgRatio > screenRatio) {
-      dh = screenH;
-      dw = screenH * imgRatio;
-      dx = (screenW - dw) / 2;
-      dy = 0;
-    } else {
-      dw = screenW;
-      dh = screenW / imgRatio;
-      dx = 0;
-      dy = (screenH - dh) / 2;
-    }
-    ctx.drawImage(bgImg, dx, dy, dw, dh);
-  } else {
-    ctx.fillStyle = "#1e131d";
-    ctx.fillRect(0, 0, screenW, screenH);
-  }
-
-  // وضع نفس طبقة التعتيم والظل الموجودة في اللعبة فوق الخريطة
-  ctx.fillStyle = "rgba(4, 8, 15, 0.35)";
+  // هالة ضوئية دافئة ذهبية خفيفة جداً لإعطاء عمق بصري
+  const glow = ctx.createRadialGradient(screenW / 2, screenH / 2, 40, screenW / 2, screenH / 2, screenW * 0.75);
+  glow.addColorStop(0, "rgba(255, 255, 255, 0.55)");
+  glow.addColorStop(0.6, "rgba(240, 226, 206, 0.25)");
+  glow.addColorStop(1, "rgba(215, 195, 172, 0)");
+  ctx.fillStyle = glow;
   ctx.fillRect(0, 0, screenW, screenH);
 
   // 4. أبعاد البطاقة: تتكيف تلقائياً (سواء كان هاتفاً عمودياً أو تابلت عريضاً)
@@ -2398,11 +2373,11 @@ async function shareCardImage() {
   const cardY = (screenH - cardH) / 2;
   const radius = Math.min(28, cardW * 0.08);
 
-  // رسم خلفية الكرت وظله
+  // رسم خلفية الكرت وظل ناعم يعزز بروز الكرت عن الخلفية الكريمية
   ctx.save();
-  ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
-  ctx.shadowBlur = 25;
-  ctx.shadowOffsetY = 12;
+  ctx.shadowColor = "rgba(100, 75, 60, 0.18)";
+  ctx.shadowBlur = 30;
+  ctx.shadowOffsetY = 14;
   ctx.fillStyle = cardBgColor;
   drawRoundedRect(ctx, cardX, cardY, cardW, cardH, radius);
   ctx.fill();
@@ -2503,6 +2478,7 @@ async function shareCardImage() {
     fallbackCopy();
   }
 }
+
 
 // ==========================================
 // 9. GLOBAL LISTENERS
