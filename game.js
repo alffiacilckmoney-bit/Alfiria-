@@ -2276,12 +2276,12 @@ function fallbackCopy() {
   showCopyToast("Link Copied!");
 }
 
-   
-
+// مشاركة لقطة أصلية بخلفية الخريطة الحقيقية وتدعم التابلت والهواتف
 async function shareCardImage() {
   const gameUrl = "https://alffiacilckmoney-bit.github.io/Alfiria-/blossom.html";
   const shareText = `Play Alfiria: Realm of Cards!\n${gameUrl}`;
 
+  // 1. استخراج نص السؤال ورقم الكرت
   const questionEl = document.getElementById("card-question-text");
   const numTag = document.getElementById("card-number-tag");
   const activeCardEl = document.getElementById("active-card");
@@ -2289,6 +2289,7 @@ async function shareCardImage() {
   const rawText = questionEl ? questionEl.innerText.trim().replace(/^“|”$/g, '') : "";
   const cardNum = numTag ? numTag.innerText.trim() : "";
 
+  // مطابقة لون الكرت حسب المرحلة
   let cardBgColor = "#fcf6ee";
   let textColor = "#2c171d";
   let subColor = "#a17887";
@@ -2313,11 +2314,18 @@ async function shareCardImage() {
     }
   }
 
-  const canvas = document.createElement("canvas");
-  canvas.width = 1080;
-  canvas.height = 1920;
-  const ctx = canvas.getContext("2d");
+  // 2. ضبط أبعاد الرسم لتطابق شاشة جهاز اللاعب (تابلت أو هاتف) بدقة عالية (Retina 2x)
+  const screenW = window.innerWidth;
+  const screenH = window.innerHeight;
+  const scale = 2; // جودة فائقة الوضوح
 
+  const canvas = document.createElement("canvas");
+  canvas.width = screenW * scale;
+  canvas.height = screenH * scale;
+  const ctx = canvas.getContext("2d");
+  ctx.scale(scale, scale);
+
+  // دالة رسم الحواف المستديرة الآمنة لجميع الأجهزة
   function drawRoundedRect(c, x, y, width, height, radius) {
     c.beginPath();
     c.moveTo(x + radius, y);
@@ -2332,49 +2340,90 @@ async function shareCardImage() {
     c.closePath();
   }
 
-  // تدرج الخلفية المطابق لمشهد الحديقة الحقيقي
-  const bgGrad = ctx.createLinearGradient(0, 0, 1080, 1920);
-  bgGrad.addColorStop(0, "#1f101b");
-  bgGrad.addColorStop(0.35, "#331a2c");
-  bgGrad.addColorStop(0.7, "#1a121d");
-  bgGrad.addColorStop(1, "#0d0910");
-  ctx.fillStyle = bgGrad;
-  ctx.fillRect(0, 0, 1080, 1920);
+  // 3. تحميل صورة الخريطة الأصلية بأمان ورسمها كخلفية حقيقية
+  const mapImgSrc = "https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1600/v1786495008/high_quality_2K_202608120102_1_1.jpg";
+  
+  const loadBgImage = () => {
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = "anonymous";
+      img.onload = () => resolve(img);
+      img.onerror = () => resolve(null);
+      img.src = mapImgSrc;
+    });
+  };
 
-  const radial = ctx.createRadialGradient(540, 750, 80, 540, 750, 750);
-  radial.addColorStop(0, "rgba(226, 133, 153, 0.28)");
-  radial.addColorStop(0.5, "rgba(180, 90, 120, 0.12)");
-  radial.addColorStop(1, "rgba(0, 0, 0, 0)");
-  ctx.fillStyle = radial;
-  ctx.fillRect(0, 0, 1080, 1920);
+  const bgImg = await loadBgImage();
 
-  const cardW = 880;
-  const cardH = 960;
-  const cardX = (1080 - cardW) / 2;
-  const cardY = (1920 - cardH) / 2;
-  const radius = 46;
+  if (bgImg) {
+    // رسم الصورة بنمط تغطية كاملة (cover) لتناسب شاشات التابلت أو الهاتف تماماً
+    const imgRatio = bgImg.width / bgImg.height;
+    const screenRatio = screenW / screenH;
+    let dw, dh, dx, dy;
 
+    if (imgRatio > screenRatio) {
+      dh = screenH;
+      dw = screenH * imgRatio;
+      dx = (screenW - dw) / 2;
+      dy = 0;
+    } else {
+      dw = screenW;
+      dh = screenW / imgRatio;
+      dx = 0;
+      dy = (screenH - dh) / 2;
+    }
+    ctx.drawImage(bgImg, dx, dy, dw, dh);
+  } else {
+    ctx.fillStyle = "#1e131d";
+    ctx.fillRect(0, 0, screenW, screenH);
+  }
+
+  // وضع نفس طبقة التعتيم والظل الموجودة في اللعبة فوق الخريطة
+  ctx.fillStyle = "rgba(4, 8, 15, 0.76)";
+  ctx.fillRect(0, 0, screenW, screenH);
+
+  // 4. أبعاد البطاقة: تتكيف تلقائياً (سواء كان هاتفاً عمودياً أو تابلت عريضاً)
+  let cardW, cardH;
+  if (screenW > screenH) {
+    // تابلت بالعرض
+    cardW = Math.min(540, screenW * 0.55);
+    cardH = Math.min(420, screenH * 0.72);
+  } else {
+    // هاتف طولي
+    cardW = Math.min(380, screenW * 0.88);
+    cardH = Math.min(480, screenH * 0.65);
+  }
+
+  const cardX = (screenW - cardW) / 2;
+  const cardY = (screenH - cardH) / 2;
+  const radius = Math.min(28, cardW * 0.08);
+
+  // رسم خلفية الكرت وظله
   ctx.save();
-  ctx.shadowColor = "rgba(0, 0, 0, 0.55)";
-  ctx.shadowBlur = 40;
-  ctx.shadowOffsetY = 18;
+  ctx.shadowColor = "rgba(0, 0, 0, 0.6)";
+  ctx.shadowBlur = 25;
+  ctx.shadowOffsetY = 12;
   ctx.fillStyle = cardBgColor;
   drawRoundedRect(ctx, cardX, cardY, cardW, cardH, radius);
   ctx.fill();
   ctx.restore();
 
+  // إطار الكرت
   ctx.strokeStyle = borderColor;
-  ctx.lineWidth = 2.5;
+  ctx.lineWidth = 1.8;
   drawRoundedRect(ctx, cardX, cardY, cardW, cardH, radius);
   ctx.stroke();
 
+  // الأيقونات في أعلى الكرت (✕ و ↗)
   ctx.fillStyle = subColor;
-  ctx.font = "bold 32px sans-serif";
-  ctx.fillText("✕", cardX + 48, cardY + 70);
-  ctx.fillText("↗", cardX + cardW - 75, cardY + 70);
+  ctx.font = `bold ${Math.round(cardW * 0.045)}px sans-serif`;
+  ctx.fillText("✕", cardX + (cardW * 0.07), cardY + (cardH * 0.1));
+  ctx.fillText("↗", cardX + cardW - (cardW * 0.1), cardY + (cardH * 0.1));
 
+  // رسم السؤال بخط إيطاليك أنيق ومتجاوب
   ctx.fillStyle = textColor;
-  ctx.font = "italic 44px 'Playfair Display', Georgia, serif";
+  const fontSize = Math.max(16, Math.min(22, Math.round(cardW * 0.052)));
+  ctx.font = `italic ${fontSize}px 'Playfair Display', Georgia, serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
@@ -2401,19 +2450,21 @@ async function shareCardImage() {
     }
   }
 
-  wrapText(ctx, rawText, 540, cardY + (cardH / 2) - 25, cardW - 140, 68);
+  wrapText(ctx, rawText, screenW / 2, cardY + (cardH / 2) - 10, cardW * 0.82, fontSize * 1.5);
 
+  // رقم الكرت وأسهم التنقل
   if (cardNum) {
     ctx.fillStyle = subColor;
-    ctx.font = "bold 28px 'Cinzel', serif";
-    ctx.fillText(cardNum, 540, cardY + cardH - 85);
+    ctx.font = `bold ${Math.round(cardW * 0.038)}px 'Cinzel', serif`;
+    ctx.fillText(cardNum, screenW / 2, cardY + cardH - (cardH * 0.09));
 
-    ctx.font = "bold 26px sans-serif";
-    ctx.fillStyle = "rgba(140, 110, 130, 0.4)";
-    ctx.fillText("<", cardX + 52, cardY + cardH - 85);
-    ctx.fillText(">", cardX + cardW - 52, cardY + cardH - 85);
+    ctx.font = `bold ${Math.round(cardW * 0.04)}px sans-serif`;
+    ctx.fillStyle = "rgba(140, 110, 130, 0.45)";
+    ctx.fillText("<", cardX + (cardW * 0.07), cardY + cardH - (cardH * 0.09));
+    ctx.fillText(">", cardX + cardW - (cardW * 0.07), cardY + cardH - (cardH * 0.09));
   }
 
+  // 5. استخراج الصورة ومشاركتها مع الرابط في النص الخارجي فقط
   try {
     canvas.toBlob(async (blob) => {
       if (!blob) {
@@ -2451,7 +2502,8 @@ async function shareCardImage() {
   } catch (err) {
     fallbackCopy();
   }
-}    
+}
+
 // ==========================================
 // 9. GLOBAL LISTENERS
 // ==========================================
