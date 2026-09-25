@@ -2276,13 +2276,12 @@ function fallbackCopy() {
   showCopyToast("Link Copied!");
 }
 
-
-// مشاركة بطاقة موحدة فائقة الدقة (Story 1080x1920) بخلفية الجزيرة الحقيقية
+// لقطة موحدة بجودة فائقة (Story 1080x1920) حادة وواضحة على التابلت والهاتف
 async function shareCardImage() {
   const gameUrl = "https://alffiacilckmoney-bit.github.io/Alfiria-/blossom.html";
   const shareText = `Play Alfiria: Realm of Cards!\n${gameUrl}`;
 
-  // 1. استخراج نص السؤال ورقم الكرت
+  // 1. استخراج نص السؤال ورقم الكرت الحالي
   const questionEl = document.getElementById("card-question-text");
   const numTag = document.getElementById("card-number-tag");
   const activeCardEl = document.getElementById("active-card");
@@ -2290,9 +2289,9 @@ async function shareCardImage() {
   const rawText = questionEl ? questionEl.innerText.trim().replace(/^“|”$/g, '') : "";
   const cardNum = numTag ? numTag.innerText.trim() : "";
 
-  // 2. مطابقة لون الكرت بدقة حسب المرحلة
+  // 2. مطابقة لون الكرت حسب المرحلة
   let cardBgColor = "#fcf6ee";
-  let textColor = "#22141a";
+  let textColor = "#24151e";
   let subColor = "#8c6070";
   let borderColor = "rgba(180, 140, 150, 0.4)";
 
@@ -2315,15 +2314,13 @@ async function shareCardImage() {
     }
   }
 
-  // 3. أبعاد قياسية ثابتة لجميع الأجهزة (Story: 1080 × 1920) تضمن توحيد الشكل على الهاتف والتابلت
-  const canvasW = 1080;
-  const canvasH = 1920;
+  // 3. تثبيت أبعاد الستوري القياسية إجبارياً على التابلت والهاتف معاً
   const canvas = document.createElement("canvas");
-  canvas.width = canvasW;
-  canvas.height = canvasH;
+  canvas.width = 1080;
+  canvas.height = 1920;
   const ctx = canvas.getContext("2d");
 
-  // تحسين جودة النصوص ونقاء الحواف
+  // تحسين معالجة النصوص الحادة
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = "high";
 
@@ -2341,7 +2338,7 @@ async function shareCardImage() {
     c.closePath();
   }
 
-  // 4. رسم صورة خلفية الجزيرة الحقيقية (بأبعاد متناسقة ومريحة)
+  // 4. رسم صورة خلفية خريطة الجزيرة الأصلية
   const mapImgSrc = "https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1600/v1786495008/high_quality_2K_202608120102_1_1.jpg";
   
   const loadBgImage = () => {
@@ -2357,40 +2354,40 @@ async function shareCardImage() {
   const bgImg = await loadBgImage();
 
   if (bgImg) {
-    // رسم الصورة بنظام Cover ثابت
+    // قص وتوسيط الصورة بنمط Cover ثابت عمودي
     const imgRatio = bgImg.width / bgImg.height;
-    const targetRatio = canvasW / canvasH;
+    const targetRatio = 1080 / 1920;
     let dw, dh, dx, dy;
 
     if (imgRatio > targetRatio) {
-      dh = canvasH;
-      dw = canvasH * imgRatio;
-      dx = (canvasW - dw) / 2;
+      dh = 1920;
+      dw = 1920 * imgRatio;
+      dx = (1080 - dw) / 2;
       dy = 0;
     } else {
-      dw = canvasW;
-      dh = canvasW / imgRatio;
+      dw = 1080;
+      dh = 1080 / imgRatio;
       dx = 0;
-      dy = (canvasH - dh) / 2;
+      dy = (1920 - dh) / 2;
     }
     ctx.drawImage(bgImg, dx, dy, dw, dh);
   } else {
-    ctx.fillStyle = "#22111c";
-    ctx.fillRect(0, 0, canvasW, canvasH);
+    ctx.fillStyle = "#1e131d";
+    ctx.fillRect(0, 0, 1080, 1920);
   }
 
-  // طبقة تعتيم ناعمة جداً تبرز البطاقة دون حجب جمال الجزيرة
-  ctx.fillStyle = "rgba(10, 14, 22, 0.58)";
-  ctx.fillRect(0, 0, canvasW, canvasH);
+  // طبقة التعتيم الناعمة للعبة (تسمح بظهور تفاصيل الساكورا بوضوح)
+  ctx.fillStyle = "rgba(8, 12, 18, 0.62)";
+  ctx.fillRect(0, 0, 1080, 1920);
 
-  // 5. رسم البطاقة المركزية (أبعاد ثابتة ومريحة للستوري)
+  // 5. أبعاد وموضع البطاقة المركزية (ثابتة ومتطابقة في كل مكان)
   const cardW = 860;
-  const cardH = 980;
-  const cardX = (canvasW - cardW) / 2;
-  const cardY = (canvasH - cardH) / 2;
+  const cardH = 960;
+  const cardX = (1080 - cardW) / 2;
+  const cardY = (1920 - cardH) / 2;
   const radius = 48;
 
-  // ظل البطاقة
+  // رسم ظل الكرت وخلفيته
   ctx.save();
   ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
   ctx.shadowBlur = 45;
@@ -2408,11 +2405,11 @@ async function shareCardImage() {
 
   // أيقونات الزوايا (✕ و ↗)
   ctx.fillStyle = subColor;
-  ctx.font = "bold 34px sans-serif";
+  ctx.font = "bold 36px sans-serif";
   ctx.fillText("✕", cardX + 50, cardY + 70);
   ctx.fillText("↗", cardX + cardW - 75, cardY + 70);
 
-  // 6. رسم نص السؤال فائق الحدة والوضوح (Ultra-Sharp Text)
+  // 6. رسم نص السؤال بخط حاد عالي الدقة (بدون أي تشويش)
   ctx.fillStyle = textColor;
   ctx.font = "italic 46px 'Playfair Display', Georgia, serif";
   ctx.textAlign = "center";
@@ -2441,13 +2438,13 @@ async function shareCardImage() {
     }
   }
 
-  wrapText(ctx, rawText, canvasW / 2, cardY + (cardH / 2) - 25, cardW - 130, 70);
+  wrapText(ctx, rawText, 540, cardY + (cardH / 2) - 25, cardW - 140, 70);
 
-  // رقم الكرت وأسهم التنقل
+  // رقم الكرت وأسهم التنقل السفلية
   if (cardNum) {
     ctx.fillStyle = subColor;
     ctx.font = "bold 32px 'Cinzel', serif";
-    ctx.fillText(cardNum, canvasW / 2, cardY + cardH - 85);
+    ctx.fillText(cardNum, 540, cardY + cardH - 85);
 
     ctx.font = "bold 30px sans-serif";
     ctx.fillStyle = "rgba(120, 90, 110, 0.45)";
@@ -2455,7 +2452,7 @@ async function shareCardImage() {
     ctx.fillText(">", cardX + cardW - 55, cardY + cardH - 85);
   }
 
-  // 7. تصدير الصورة ومشاركتها مع الرابط في النص الخارجي فقط
+  // 7. تحويل الـ Canvas إلى صورة ومشاركتها مع الرابط في الخارج
   try {
     canvas.toBlob(async (blob) => {
       if (!blob) {
@@ -2494,6 +2491,7 @@ async function shareCardImage() {
     fallbackCopy();
   }
 }
+
 
 // ==========================================
 // 9. GLOBAL LISTENERS
