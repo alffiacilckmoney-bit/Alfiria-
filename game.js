@@ -2379,7 +2379,7 @@ async function shareCardImage() {
   }
 
   // وضع نفس طبقة التعتيم والظل الموجودة في اللعبة فوق الخريطة
-  ctx.fillStyle = "rgba(4, 8, 15, 0.76)";
+  ctx.fillStyle = "rgba(4, 8, 15, 0.35)";
   ctx.fillRect(0, 0, screenW, screenH);
 
   // 4. أبعاد البطاقة: تتكيف تلقائياً (سواء كان هاتفاً عمودياً أو تابلت عريضاً)
