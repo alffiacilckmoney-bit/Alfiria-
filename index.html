@@ -415,9 +415,7 @@
 
   <div id="game-toast"></div>
 
-  <!-- استدعاء مشغل الصوت -->
-  <script src="./js/audio.js?v=1"></script>
-
+  <!-- سكربت التحكم بالخريطة -->
   <script>
     const url16x9 = "https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1920/v1786395141/make_it_larger_2K_202608102349_1.jpg";
     const url4x3 = "https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1600/v1786398462/higher_quality_2K_202608110046_1.jpg";
@@ -480,20 +478,19 @@
       resizeTimer = setTimeout(applyBestMap, 200);
     });
 
-
     function onMapImageLoaded() {
       isMapLoaded = true;
       preloadStandbyMap();
-      // إذا كان اللاعب قد ضغط وبدأ التحميل، نُظهر الخريطة فوراً
       if (loader.style.display === 'flex') {
         finishAndShowMap();
       }
     }
 
-        // التعامل مع أول لمسة: نفعّل محرك الصوت فقط ونبدأ التحميل
+    // أول لمسة للمستخدم
     function handleInitialUserTap() {
       if (typeof SoundManager !== 'undefined') {
-        SoundManager.init(); // تجهيز الصوت ورفع الحظر
+        SoundManager.init();
+        SoundManager.play('intro');
       }
 
       startGate.style.display = 'none';
@@ -504,7 +501,6 @@
       }
     }
 
-    // انتهاء التحميل: إخفاء اللودر، كشف الخريطة، وتشغيل صوت الإنترو فوراً
     function finishAndShowMap() {
       setTimeout(() => {
         loader.style.opacity = '0';
@@ -512,11 +508,6 @@
           loader.style.display = 'none';
           mapImg.classList.add('loaded');
           pins.forEach(pin => pin.classList.add('visible'));
-
-          // تشغيل صوت الإنترو لحظة ظهور الخريطة والدبابيس
-          if (typeof SoundManager !== 'undefined') {
-            SoundManager.play('intro');
-          }
         }, 350);
       }, 500);
     }
@@ -541,7 +532,7 @@
       mapImg.onerror = handleMapLoadError;
     }
 
-    // فحص ما إذا كان اللاعب عائداً من داخل اللعبة
+    // فحص العودة من اللعبة
     const urlParams = new URLSearchParams(window.location.search);
     if (urlParams.get('from') === 'game') {
       startGate.style.display = 'none';
@@ -585,9 +576,6 @@
         return;
       }
 
-      if (typeof SoundManager !== 'undefined') {
-        SoundManager.play('islandClick');
-      }
 
       document.getElementById('island-title').innerText = data.title;
       document.getElementById('island-text').innerText = data.text;
@@ -597,7 +585,7 @@
 
     function closeIslandModal() {
       const modal = document.getElementById('island-modal');
-      if (modal) modal.classList.remove('active');
+      if (modal) modal.classList.remove("active");
     }
 
     function handleOutsideClick(e) {
@@ -606,14 +594,10 @@
       }
     }
 
-    function startQuest() {
+        function startQuest() {
       if (isNavigating) return;
 
       if (currentIsland === 'blossom') {
-        if (typeof SoundManager !== 'undefined') {
-          SoundManager.play('islandClick');
-        }
-
         isNavigating = true;
         const playBtn = document.querySelector('#island-modal .stone-btn');
         if (playBtn) {
@@ -641,5 +625,8 @@
       e.preventDefault();
     }, { passive: false });
   </script>
+
+  <!-- استدعاء ملف اللعبة الموحد الذي يحتوي على مشغل الصوت -->
+  <script src="game.js"></script>
 </body>
 </html>
