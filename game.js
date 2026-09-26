@@ -1,4 +1,36 @@
 // ==========================================
+// STYLES INJECTION (ONCE FOR ZERO-REFLOW IMPACT)
+// ==========================================
+(function injectDynamicMechanicStyles() {
+  if (typeof document === "undefined") return;
+  const styleId = "alfiria-dynamic-mechanic-styles";
+  if (document.getElementById(styleId)) return;
+
+  const styleEl = document.createElement("style");
+  styleEl.id = styleId;
+  styleEl.textContent = `
+    @keyframes fadeInStep {
+      from { opacity: 0; transform: translateY(8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .truth-anim-1 { opacity: 0; animation: fadeInStep 0.5s ease forwards 0.5s; }
+    .truth-anim-2 { opacity: 0; animation: fadeInStep 0.5s ease forwards 1.4s; }
+    .truth-anim-3 { opacity: 0; animation: fadeInStep 0.5s ease forwards 2.4s; }
+    .verdict-anim-1 { opacity: 0; animation: fadeInStep 0.5s ease forwards 0.5s; }
+    .verdict-anim-2 { opacity: 0; animation: fadeInStep 0.5s ease forwards 1.4s; }
+    .verdict-anim-3 { opacity: 0; animation: fadeInStep 0.5s ease forwards 2.4s; }
+    .btn-fade-in { animation: fadeInStep 0.5s ease forwards; }
+
+    .who-flip-card { background-color: transparent; width: 100%; height: 220px; perspective: 1000px; margin: auto 0; }
+    .who-flip-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); transform-style: preserve-3d; }
+    .who-flip-inner.is-flipped { transform: rotateY(180deg); }
+    .who-flip-front, .who-flip-back { position: absolute; width: 100%; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 14px; border-radius: 12px; box-sizing: border-box; background: rgba(255, 255, 255, 0.75); border: 1px solid rgba(130, 86, 102, 0.2); }
+    .who-flip-back { transform: rotateY(180deg); background: rgba(255, 255, 255, 0.9); }
+  `;
+  document.head.appendChild(styleEl);
+})();
+
+// ==========================================
 // 0. MINIMAL AUDIO ENGINE (INTRO, SPECIAL, CELEBRATION ONLY)
 // ==========================================
 const SoundManager = {
@@ -41,9 +73,11 @@ const SoundManager = {
       try {
         if (typeof this.currentSource.stop === 'function') {
           this.currentSource.stop();
+          this.currentSource.disconnect();
         } else if (typeof this.currentSource.pause === 'function') {
           this.currentSource.pause();
           this.currentSource.currentTime = 0;
+          this.currentSource.src = "";
         }
       } catch (e) {}
       this.currentSource = null;
@@ -99,6 +133,12 @@ const SoundManager = {
       const fallback = new Audio(this.files[key]);
       fallback.volume = volume;
       this.currentSource = fallback;
+      fallback.onended = () => {
+        if (this.currentSource === fallback) {
+          fallback.src = "";
+          this.currentSource = null;
+        }
+      };
       fallback.play().catch(() => {});
       return;
     }
@@ -122,6 +162,7 @@ const SoundManager = {
     this.currentSource = source;
     source.onended = () => {
       if (this.currentSource === source) {
+        try { source.disconnect(); } catch (e) {}
         this.currentSource = null;
       }
     };
@@ -325,8 +366,24 @@ function getInitialGameState() {
   };
 }
 
+function cloneHistoryState(history) {
+  if (!history) return getInitialGameState();
+  if (typeof structuredClone === "function") {
+    try { return structuredClone(history); } catch (e) {}
+  }
+  return {
+    seenCardIds: Array.isArray(history.seenCardIds) ? [...history.seenCardIds] : [],
+    viewedCardIds: Array.isArray(history.viewedCardIds) ? [...history.viewedCardIds] : [],
+    lastSeenSession: history.lastSeenSession ? { ...history.lastSeenSession } : {},
+    consecutiveAppeared: history.consecutiveAppeared ? { ...history.consecutiveAppeared } : {},
+    cooldownUntilSession: history.cooldownUntilSession ? { ...history.cooldownUntilSession } : {},
+    currentSessionIndex: history.currentSessionIndex || 0,
+    totalCardsViewed: history.totalCardsViewed || 0
+  };
+}
+
 function generateSessionCards(userGameHistory) {
-  const history = userGameHistory ? JSON.parse(JSON.stringify(userGameHistory)) : getInitialGameState();
+  const history = cloneHistoryState(userGameHistory);
   history.currentSessionIndex = (history.currentSessionIndex || 0) + 1;
   const currentSessionIdx = history.currentSessionIndex;
 
@@ -738,7 +795,6 @@ const MechanicsManager = {
         </div>
       `;
     }
-    // الخطوة 3: كشف الحقيقة مع تأخير حقيقي ومضمون لزر DONE
     else if (this.currentStep === 3) {
       const target = state.targetPlayer;
 
@@ -761,17 +817,6 @@ const MechanicsManager = {
       if (!state.truthOutro) state.truthOutro = outroPhrases[Math.floor(Math.random() * outroPhrases.length)];
 
       container.innerHTML = `
-        <style>
-          @keyframes fadeInStep {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          .truth-anim-1 { opacity: 0; animation: fadeInStep 0.5s ease forwards 0.5s; }
-          .truth-anim-2 { opacity: 0; animation: fadeInStep 0.5s ease forwards 1.4s; }
-          .truth-anim-3 { opacity: 0; animation: fadeInStep 0.5s ease forwards 2.4s; }
-          .btn-fade-in { animation: fadeInStep 0.5s ease forwards; }
-        </style>
-
         <div class="card-header-row">
           <button class="card-header-btn" onclick="MechanicsManager.cancel()">✕</button>
           <div class="card-header-center">
@@ -796,11 +841,9 @@ const MechanicsManager = {
           </div>
         </div>
 
-        <!-- الحاوية تبدأ فارغة لتضمن عدم ظهور الزر مع العبارة -->
         <div id="predict-done-btn-wrap" class="predict-nav-row" style="margin-top: auto; padding-top: 10px; width: 100%; min-height: 48px;"></div>
       `;
 
-      // مؤقت جافاسكريبت حقيقي يضمن ظهور الزر بعد أن ينتهي اللاعبون من قراءة العبارة
       this._doneTimer = setTimeout(() => {
         const wrap = document.getElementById("predict-done-btn-wrap");
         if (wrap) {
@@ -983,14 +1026,6 @@ const MechanicsManager = {
       if (!currentAnswerObj) return;
 
       container.innerHTML = `
-        <style>
-          .who-flip-card { background-color: transparent; width: 100%; height: 220px; perspective: 1000px; margin: auto 0; }
-          .who-flip-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1); transform-style: preserve-3d; }
-          .who-flip-inner.is-flipped { transform: rotateY(180deg); }
-          .who-flip-front, .who-flip-back { position: absolute; width: 100%; height: 100%; -webkit-backface-visibility: hidden; backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 18px 14px; border-radius: 12px; box-sizing: border-box; background: rgba(255, 255, 255, 0.75); border: 1px solid rgba(130, 86, 102, 0.2); }
-          .who-flip-back { transform: rotateY(180deg); background: rgba(255, 255, 255, 0.9); }
-        </style>
-
         <div class="card-header-row">
           <button class="card-header-btn" onclick="MechanicsManager.cancel()">✕</button>
           <div class="card-header-center"></div>
@@ -1085,7 +1120,12 @@ const MechanicsManager = {
   getFairWhoSaidSelectedPlayers(allPlayers) {
     const total = allPlayers.length;
     let quota = total >= 5 ? 3 : 2;
-    let historyCounts = JSON.parse(localStorage.getItem("alfiria_whosaid_history") || "{}");
+    let historyCounts = {};
+    try {
+      historyCounts = JSON.parse(localStorage.getItem("alfiria_whosaid_history") || "{}");
+    } catch (e) {
+      historyCounts = {};
+    }
 
     allPlayers.forEach(p => {
       if (typeof historyCounts[p] === "undefined") historyCounts[p] = 0;
@@ -1098,7 +1138,9 @@ const MechanicsManager = {
 
     const chosen = sortedPlayers.slice(0, quota);
     chosen.forEach(p => { historyCounts[p] = (historyCounts[p] || 0) + 1; });
-    localStorage.setItem("alfiria_whosaid_history", JSON.stringify(historyCounts));
+    try {
+      localStorage.setItem("alfiria_whosaid_history", JSON.stringify(historyCounts));
+    } catch (e) {}
     return chosen;
   },
 
@@ -1247,7 +1289,6 @@ const MechanicsManager = {
         </div>
       `;
     }
-    // الخطوة 2: النتيجة مع تأخير حقيقي ومضمون لزر DONE
     else if (this.currentStep === 2) {
       const voteCounts = {};
       Object.values(state.votes || {}).forEach(candidate => {
@@ -1297,17 +1338,6 @@ const MechanicsManager = {
       const badgeText = isTie ? `${voteLabel} each` : voteLabel;
 
       container.innerHTML = `
-        <style>
-          @keyframes fadeInStep {
-            from { opacity: 0; transform: translateY(8px); }
-            to { opacity: 1; transform: translateY(0); }
-          }
-          .verdict-anim-1 { opacity: 0; animation: fadeInStep 0.5s ease forwards 0.5s; }
-          .verdict-anim-2 { opacity: 0; animation: fadeInStep 0.5s ease forwards 1.4s; }
-          .verdict-anim-3 { opacity: 0; animation: fadeInStep 0.5s ease forwards 2.4s; }
-          .btn-fade-in { animation: fadeInStep 0.5s ease forwards; }
-        </style>
-
         <div class="card-header-row">
           <button class="card-header-btn" onclick="MechanicsManager.cancel()">✕</button>
           <div class="card-header-center">
@@ -1338,11 +1368,9 @@ const MechanicsManager = {
           </div>
         </div>
 
-        <!-- الحاوية تبدأ فارغة لتضمن عدم ظهور الزر مع العبارة -->
         <div id="verdict-done-btn-wrap" class="predict-nav-row" style="margin-top: auto; padding-top: 10px; width: 100%; min-height: 48px;"></div>
       `;
 
-      // مؤقت جافاسكريبت حقيقي يضمن ظهور الزر بعد قراءة العبارة الساخرة
       this._doneTimer = setTimeout(() => {
         const wrap = document.getElementById("verdict-done-btn-wrap");
         if (wrap) {
@@ -2211,7 +2239,7 @@ function triggerSparkles() {
   const screenWidth = window.innerWidth;  
   const screenHeight = window.innerHeight;  
 
-  // تخفيف العدد إلى 12 عنصر فقط لضمان سرعة الهواتف 60fps
+  // تم ضبط العدد بدقة على 12 لضمان سلاسة وثبات 60fps على الهواتف
   for (let i = 0; i < 35; i++) {  
     const sparkle = document.createElement('div');  
     sparkle.className = 'magic-sparkle';  
@@ -2276,7 +2304,7 @@ function fallbackCopy() {
   showCopyToast("Link Copied!");
 }
 
-// لقطة موحدة بجودة فائقة (Story 1080x1920) حادة وواضحة على التابلت والهاتف
+// توليد بطاقة مشاركة مخصصة (TikTok / Story Style) ومشاركتها مع الرابط
 async function shareCardImage() {
   const gameUrl = "https://alffiacilckmoney-bit.github.io/Alfiria-/blossom.html";
   const shareText = `Play Alfiria: Realm of Cards!\n${gameUrl}`;
@@ -2284,134 +2312,60 @@ async function shareCardImage() {
   // 1. استخراج نص السؤال ورقم الكرت الحالي
   const questionEl = document.getElementById("card-question-text");
   const numTag = document.getElementById("card-number-tag");
-  const activeCardEl = document.getElementById("active-card");
-  
-  const rawText = questionEl ? questionEl.innerText.trim().replace(/^“|”$/g, '') : "";
+  const rawText = questionEl ? questionEl.innerText.trim().replace(/^“|”$/g, '') : "A question from Alfiria";
   const cardNum = numTag ? numTag.innerText.trim() : "";
 
-  // 2. مطابقة لون الكرت حسب المرحلة
-  let cardBgColor = "#fcf6ee";
-  let textColor = "#24151e";
-  let subColor = "#8c6070";
-  let borderColor = "rgba(180, 140, 150, 0.4)";
-
-  if (activeCardEl) {
-    if (activeCardEl.classList.contains("card-lvl-sprouting")) {
-      cardBgColor = "#eaf2e4";
-      textColor = "#192618";
-      subColor = "#5a6e59";
-      borderColor = "rgba(125, 155, 125, 0.4)";
-    } else if (activeCardEl.classList.contains("card-lvl-gentle")) {
-      cardBgColor = "#f6edf3";
-      textColor = "#2d1a26";
-      subColor = "#7f5973";
-      borderColor = "rgba(165, 130, 155, 0.4)";
-    } else if (activeCardEl.classList.contains("card-lvl-sunny")) {
-      cardBgColor = "#fdf3e7";
-      textColor = "#331f0e";
-      subColor = "#8a613d";
-      borderColor = "rgba(180, 140, 110, 0.4)";
-    }
-  }
-
-  // 3. تثبيت أبعاد الستوري القياسية إجبارياً على التابلت والهاتف معاً
+  // 2. إنشاء لوحة رسم بمقاسات القصة (Story: 1080x1920)
   const canvas = document.createElement("canvas");
   canvas.width = 1080;
   canvas.height = 1920;
   const ctx = canvas.getContext("2d");
 
-  // تحسين معالجة النصوص الحادة
-  ctx.imageSmoothingEnabled = true;
-  ctx.imageSmoothingQuality = "high";
-
-  function drawRoundedRect(c, x, y, width, height, radius) {
-    c.beginPath();
-    c.moveTo(x + radius, y);
-    c.lineTo(x + width - radius, y);
-    c.arcTo(x + width, y, x + width, y + radius, radius);
-    c.lineTo(x + width, y + height - radius);
-    c.arcTo(x + width, y + height, x + width - radius, y + height, radius);
-    c.lineTo(x + radius, y + height);
-    c.arcTo(x, y + height, x, y + height - radius, radius);
-    c.lineTo(x, y + radius);
-    c.arcTo(x, y, x + radius, y, radius);
-    c.closePath();
-  }
-
-  // 4. رسم صورة خلفية خريطة الجزيرة الأصلية
-  const mapImgSrc = "https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1600/v1786495008/high_quality_2K_202608120102_1_1.jpg";
-  
-  const loadBgImage = () => {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      img.onload = () => resolve(img);
-      img.onerror = () => resolve(null);
-      img.src = mapImgSrc;
-    });
-  };
-
-  const bgImg = await loadBgImage();
-
-  if (bgImg) {
-    // قص وتوسيط الصورة بنمط Cover ثابت عمودي
-    const imgRatio = bgImg.width / bgImg.height;
-    const targetRatio = 1080 / 1920;
-    let dw, dh, dx, dy;
-
-    if (imgRatio > targetRatio) {
-      dh = 1920;
-      dw = 1920 * imgRatio;
-      dx = (1080 - dw) / 2;
-      dy = 0;
-    } else {
-      dw = 1080;
-      dh = 1080 / imgRatio;
-      dx = 0;
-      dy = (1920 - dh) / 2;
-    }
-    ctx.drawImage(bgImg, dx, dy, dw, dh);
-  } else {
-    ctx.fillStyle = "#1e131d";
-    ctx.fillRect(0, 0, 1080, 1920);
-  }
-
-  // طبقة التعتيم الناعمة للعبة (تسمح بظهور تفاصيل الساكورا بوضوح)
-  ctx.fillStyle = "rgba(8, 12, 18, 0.62)";
+  // رسم الخلفية الداكنة العميقة
+  ctx.fillStyle = "#070b10";
   ctx.fillRect(0, 0, 1080, 1920);
 
-  // 5. أبعاد وموضع البطاقة المركزية (ثابتة ومتطابقة في كل مكان)
+  // هالة توهج خفيفة خلف البطاقة
+  const glow = ctx.createRadialGradient(540, 960, 100, 540, 960, 600);
+  glow.addColorStop(0, "rgba(226, 133, 153, 0.15)");
+  glow.addColorStop(1, "rgba(7, 11, 16, 0)");
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, 1080, 1920);
+
+  // أبعاد البطاقة المركزية (مطابقة للصورة تماماً)
   const cardW = 860;
-  const cardH = 960;
+  const cardH = 980;
   const cardX = (1080 - cardW) / 2;
-  const cardY = (1920 - cardH) / 2;
+  const cardY = 470;
   const radius = 48;
 
-  // رسم ظل الكرت وخلفيته
+  // رسم خلفية البطاقة وظلها الفخم
   ctx.save();
   ctx.shadowColor = "rgba(0, 0, 0, 0.65)";
   ctx.shadowBlur = 45;
   ctx.shadowOffsetY = 20;
-  ctx.fillStyle = cardBgColor;
-  drawRoundedRect(ctx, cardX, cardY, cardW, cardH, radius);
+  ctx.fillStyle = "#fcf6ee";
+  ctx.beginPath();
+  ctx.roundRect(cardX, cardY, cardW, cardH, radius);
   ctx.fill();
   ctx.restore();
 
-  // إطار الكرت
-  ctx.strokeStyle = borderColor;
+  // إطار رقيق وناعم للبطاقة
+  ctx.strokeStyle = "rgba(180, 140, 150, 0.3)";
   ctx.lineWidth = 3;
-  drawRoundedRect(ctx, cardX, cardY, cardW, cardH, radius);
+  ctx.beginPath();
+  ctx.roundRect(cardX, cardY, cardW, cardH, radius);
   ctx.stroke();
 
-  // أيقونات الزوايا (✕ و ↗)
-  ctx.fillStyle = subColor;
-  ctx.font = "bold 36px sans-serif";
+  // رسم أيقونة الإغلاق (✕) وأيقونة المشاركة (↗) بأعلى البطاقة
+  ctx.fillStyle = "#a17887";
+  ctx.font = "bold 32px sans-serif";
   ctx.fillText("✕", cardX + 50, cardY + 70);
   ctx.fillText("↗", cardX + cardW - 75, cardY + 70);
 
-  // 6. رسم نص السؤال بخط حاد عالي الدقة (بدون أي تشويش)
-  ctx.fillStyle = textColor;
-  ctx.font = "italic 46px 'Playfair Display', Georgia, serif";
+  // رسم نص السؤال في منتصف البطاقة بدقة وتوزيع أسطر متناسق
+  ctx.fillStyle = "#2c171d";
+  ctx.font = "italic 44px 'Playfair Display', Georgia, serif";
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
 
@@ -2438,60 +2392,62 @@ async function shareCardImage() {
     }
   }
 
-  wrapText(ctx, rawText, 540, cardY + (cardH / 2) - 25, cardW - 140, 70);
+  wrapText(ctx, rawText, 540, cardY + (cardH / 2) - 30, cardW - 140, 68);
 
-  // رقم الكرت وأسهم التنقل السفلية
+  // رقم الكرت في أسفل البطاقة
   if (cardNum) {
-    ctx.fillStyle = subColor;
-    ctx.font = "bold 32px 'Cinzel', serif";
+    ctx.fillStyle = "#a17887";
+    ctx.font = "bold 30px 'Cinzel', serif";
     ctx.fillText(cardNum, 540, cardY + cardH - 85);
-
-    ctx.font = "bold 30px sans-serif";
-    ctx.fillStyle = "rgba(120, 90, 110, 0.45)";
-    ctx.fillText("<", cardX + 55, cardY + cardH - 85);
-    ctx.fillText(">", cardX + cardW - 55, cardY + cardH - 85);
   }
 
-  // 7. تحويل الـ Canvas إلى صورة ومشاركتها مع الرابط في الخارج
-  try {
-    canvas.toBlob(async (blob) => {
-      if (!blob) {
-        fallbackCopy();
-        return;
-      }
+  // التذييل في أسفل الشاشة (اسم اللعبة ورابط الموقع)
+  ctx.fillStyle = "#e2c08d";
+  ctx.font = "bold 36px 'Cinzel', Georgia, serif";
+  ctx.letterSpacing = "4px";
 
-      const file = new File([blob], "alfiria-card.png", { type: "image/png" });
+  ctx.fillStyle = "rgba(245, 229, 201, 0.75)";
+  ctx.font = "26px sans-serif";
+  ctx.letterSpacing = "1px";
+  ctx.fillText("alffiacilckmoney-bit.github.io/Alfiria-", 540, 1660);
 
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
-        try {
-          await navigator.share({
-            files: [file],
-            text: shareText
-          });
-          return;
-        } catch (err) {
-          if (err.name === 'AbortError') return;
-        }
-      }
-
-      if (navigator.share) {
-        try {
-          await navigator.share({
-            title: "Alfiria - Realm of Cards",
-            text: shareText,
-            url: gameUrl
-          });
-          return;
-        } catch (e) {}
-      }
-
+  // 3. تحويل الرسمة إلى صورة ومشاركتها عبر المتصفح
+  canvas.toBlob(async (blob) => {
+    if (!blob) {
       fallbackCopy();
-    }, "image/png");
-  } catch (err) {
-    fallbackCopy();
-  }
-}
+      return;
+    }
 
+    const file = new File([blob], "alfiria-card.png", { type: "image/png" });
+
+    // إذا كان الهاتف يدعم مشاركة الملفات (iOS / Android Safari & Chrome)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          text: shareText
+        });
+        return;
+      } catch (err) {
+        if (err.name === 'AbortError') return; // المستخدم ألغى القائمة بنفسه
+      }
+    }
+
+    // بديل في حال عدم دعم مشاركة الصور المباشرة في النظام:
+    if (navigator.share) {
+      try {
+        await navigator.share({
+          title: "Alfiria - Realm of Cards",
+          text: shareText,
+          url: gameUrl
+        });
+        return;
+      } catch (e) {}
+    }
+
+    fallbackCopy();
+  }, "image/png");
+}
 
 // ==========================================
 // 9. GLOBAL LISTENERS
@@ -2515,6 +2471,3 @@ window.addEventListener("DOMContentLoaded", () => {
     initBlossomIsland();
   }
 });
-
-
-
