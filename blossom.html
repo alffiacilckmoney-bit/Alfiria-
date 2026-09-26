@@ -5,11 +5,24 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Alfiria - Realm of Cards</title>
   
-  <!-- الخطوط الرسمية للعبة -->
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Playfair+Display:ital,wght@0,600;1,600&family=Quicksand:wght@400;500;700&display=swap" rel="stylesheet">
+  <!-- تحسين الاتصال بخوادم الخطوط مسبقاً -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  
+  <!-- استدعاء خفيف ومركّز: Cinzel للعناوين، Quicksand للنصوص، و Playfair Display المائل للأسئلة -->
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@700&family=Playfair+Display:ital,wght@1,600&family=Quicksand:wght@600&display=swap" rel="stylesheet">
   
   <!-- ملف التنسيقات الخارجي -->
   <link rel="stylesheet" href="./style.css?v=1">
+
+  <style>
+    /* تطبيق خط السؤال المائل الأنيق كما في الصورة تماماً */
+    .card-question {
+      font-family: 'Playfair Display', Georgia, serif !important;
+      font-style: italic !important;
+      font-weight: 600 !important;
+    }
+  </style>
 </head>
 <body>
 
@@ -40,13 +53,13 @@
       </div>
     </div>
 
-        
-    
-  
-    
-    <!-- خريطة الصخور التفاعلية الخمسة -->
+    <!-- خريطة الصخور التفاعلية الخمسة (فك تشفير غير متزامن لتخفيف المعالج) -->
     <div id="blossom-container">
-      <img id="blossom-map-img" src="https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1920/v1786495008/high_quality_2K_202608120102_1_1.jpg" alt="Blossom Island Level Map" onerror="document.getElementById('map-network-error').style.display='block'">
+      <img id="blossom-map-img" 
+           decoding="async"
+           src="https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1920/v1786495008/high_quality_2K_202608120102_1_1.jpg" 
+           alt="Blossom Island Level Map" 
+           onerror="document.getElementById('map-network-error').style.display='block'">
       <div id="rock-step-1" class="rock-node active" onclick="handleNodeClick(1)">1</div>
       <div id="rock-step-2" class="rock-node locked" onclick="handleNodeClick(2)">2</div>
       <div id="rock-step-3" class="rock-node locked" onclick="handleNodeClick(3)">3</div>
@@ -73,8 +86,8 @@
     </div>
   </div>
 
-  <!-- نافذة تنبيه الصخرة المقفلة (إغلاق بالزر ✕ أو النقر بالخارج دون زر إضافي) -->
-  <div id="level-intro-modal" class="modal-overlay" onclick="handleOutsideModalClick(event, 'level-intro-modal')">
+  <!-- نافذة تنبيه الصخرة المقفلة (إغلاق آمن بدون استدعاءات مفقودة) -->
+  <div id="level-intro-modal" class="modal-overlay">
     <div class="parchment-scroll">
       <button class="modal-close-corner-btn" onclick="closeLevelIntroModal()">✕</button>
       <h2 class="scroll-title">PATH LOCKED</h2>
@@ -131,20 +144,19 @@
     </div>
   </div>
 
-  <!-- نافذة الاحتفاليات والمايلستونز (أزرار موحدة الحجم ومرتبطة بالخريطة) -->
+  <!-- نافذة الاحتفاليات والمايلستونز (مع الحاوية المعرفة بشكل مطابق لكود المحرك) -->
   <div id="island-completion-modal" class="modal-overlay">
     <div id="confetti-container"></div>
     <div class="parchment-scroll">
       <h2 class="scroll-title">STAGE COMPLETE! 🌸</h2>
       <div id="completion-text" class="scroll-text-container" style="margin-top: 15px;"></div>
-      <div class="button-group" style="gap: 12px; display: flex; width: 100%;">
-        <button class="stone-btn secondary" onclick="returnToWorldMap()" style="flex: 1; padding: 12px 0;">EXIT</button>
-        <button id="completion-action-btn" class="stone-btn" onclick="startNewReplayRound()" style="flex: 1; padding: 12px 0;">CONTINUE</button>
+      <div id="completion-actions-container" class="button-group" style="gap: 12px; display: flex; width: 100%;">
+        <button class="exit-btn" onclick="returnToWorldMap()" style="flex: 1; padding: 12px 0;">EXIT</button>
+        <button id="completion-continue-btn" class="stone-btn" onclick="startNewReplayRound()" style="flex: 1; padding: 12px 0;">CONTINUE</button>
       </div>
     </div>
   </div>
+
   <script src="game.js"></script>
 </body>
 </html>
-
-  
