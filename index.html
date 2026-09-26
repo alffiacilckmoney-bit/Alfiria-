@@ -84,7 +84,7 @@
       color: var(--gold-accent);
       font-family: 'Cinzel', serif;
       font-size: clamp(0.9rem, 2vw, 1.2rem);
-      transition: opacity 0.4s ease;
+      transition: opacity 0.3s ease;
     }
 
     .spinner {
@@ -172,7 +172,7 @@
       display: block;
       object-fit: contain;
       opacity: 0;
-      transition: opacity 0.5s ease;
+      transition: opacity 0.4s ease;
     }
 
     #world-map-img.loaded {
@@ -187,6 +187,7 @@
       opacity: 0;
       pointer-events: none;
       transition: opacity 0.3s ease;
+      will-change: transform, opacity;
     }
 
     .island-pin.visible {
@@ -415,7 +416,65 @@
 
   <div id="game-toast"></div>
 
-  <!-- سكربت التحكم بالخريطة -->
+  <!-- سكربت مخصص وخفيف للصوت الخاص بشاشة البداية فقط -->
+  <script>
+    const IntroSound = {
+      ctx: null,
+      buffer: null,
+      url: 'https://res.cloudinary.com/qc0aowwf/video/upload/br_64k,q_auto/v1790065749/intro.mp3',
+      volume: 0.50,
+
+      init() {
+        if (!this.ctx) {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          if (AudioCtx) this.ctx = new AudioCtx();
+        }
+        if (this.ctx && this.ctx.state === 'suspended') {
+          this.ctx.resume();
+        }
+      },
+
+      async play() {
+        this.init();
+        if (this.ctx && this.ctx.state === 'suspended') {
+          await this.ctx.resume();
+        }
+
+        try {
+          if (!this.buffer) {
+            const res = await fetch(this.url);
+            const ab = await res.arrayBuffer();
+            this.buffer = await this.ctx.decodeAudioData(ab);
+          }
+
+          const source = this.ctx.createBufferSource();
+          const gainNode = this.ctx.createGain();
+          source.buffer = this.buffer;
+
+          const now = this.ctx.currentTime;
+          const duration = this.buffer.duration;
+          const fadeDuration = Math.min(1.5, duration * 0.5);
+          const fadeStartTime = Math.max(now, now + duration - fadeDuration);
+
+          gainNode.gain.setValueAtTime(this.volume, now);
+          gainNode.gain.setValueAtTime(this.volume, fadeStartTime);
+          gainNode.gain.linearRampToValueAtTime(0.0001, now + duration);
+
+          source.connect(gainNode);
+          gainNode.connect(this.ctx.destination);
+          source.onended = () => { try { source.disconnect(); } catch (e) {} };
+          source.start(0);
+        } catch (e) {
+          // Fallback مباشر ومضمون في حال منع الـ AudioContext
+          const fallback = new Audio(this.url);
+          fallback.volume = this.volume;
+          fallback.play().catch(() => {});
+        }
+      }
+    };
+  </script>
+
+  <!-- سكربت التحكم بالخريطة المحسن -->
   <script>
     const url16x9 = "https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1920/v1786395141/make_it_larger_2K_202608102349_1.jpg";
     const url4x3 = "https://res.cloudinary.com/qc0aowwf/image/upload/f_auto,q_auto,w_1600/v1786398462/higher_quality_2K_202608110046_1.jpg";
@@ -440,7 +499,6 @@
 
     let currentIsland = '';
     let currentMapUrl = '';
-    let isAppStarted = false;
     let isNavigating = false;
     let toastTimer = null;
     let isMapLoaded = false;
@@ -466,12 +524,6 @@
     }
     applyBestMap();
 
-    function preloadStandbyMap() {
-      const standbyUrl = (currentMapUrl === url16x9) ? url4x3 : url16x9;
-      const standbyImg = new Image();
-      standbyImg.src = standbyUrl;
-    }
-
     let resizeTimer;
     window.addEventListener('resize', () => {
       clearTimeout(resizeTimer);
@@ -480,7 +532,6 @@
 
     function onMapImageLoaded() {
       isMapLoaded = true;
-      preloadStandbyMap();
       if (loader.style.display === 'flex') {
         finishAndShowMap();
       }
@@ -488,10 +539,7 @@
 
     // أول لمسة للمستخدم
     function handleInitialUserTap() {
-      if (typeof SoundManager !== 'undefined') {
-        SoundManager.init();
-        SoundManager.play('intro');
-      }
+      IntroSound.play();
 
       startGate.style.display = 'none';
       loader.style.display = 'flex';
@@ -508,8 +556,8 @@
           loader.style.display = 'none';
           mapImg.classList.add('loaded');
           pins.forEach(pin => pin.classList.add('visible'));
-        }, 350);
-      }, 500);
+        }, 300);
+      }, 150);
     }
 
     function handleMapLoadError() {
@@ -576,7 +624,6 @@
         return;
       }
 
-
       document.getElementById('island-title').innerText = data.title;
       document.getElementById('island-text').innerText = data.text;
       const modal = document.getElementById('island-modal');
@@ -594,7 +641,7 @@
       }
     }
 
-        function startQuest() {
+    function startQuest() {
       if (isNavigating) return;
 
       if (currentIsland === 'blossom') {
@@ -625,8 +672,5 @@
       e.preventDefault();
     }, { passive: false });
   </script>
-
-  <!-- استدعاء ملف اللعبة الموحد الذي يحتوي على مشغل الصوت -->
-  <script src="game.js"></script>
 </body>
 </html>
